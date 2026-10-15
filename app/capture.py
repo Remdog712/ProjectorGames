@@ -37,7 +37,7 @@ class CaptureManager:
             await asyncio.sleep(delay)
             depth, color = camera.pair()
             if depth is None or (self.kind == 'pose' and color is None):
-                raise ValueError('Fresh depth and color frames are required for a pose; fresh depth is required for an empty surface. Reconnect the camera and retry.')
+                raise ValueError('Fresh depth and color frames are required for alignment; fresh depth is required for a distance capture. Reconnect the camera and retry.')
             self.depth, self.color = depth, color
             if self.kind == 'background':
                 on_background(depth.copy())

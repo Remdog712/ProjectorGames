@@ -12,7 +12,7 @@ let selection = 'corners', frozenId = null, handledCapture = null, imageBusy = f
 let frozenSizes = null, backgroundHandled = null, cameraFormLoaded = false, settingsLoaded = false, history = [];
 const frameReady = {color: false, depth: false};
 const lastImages = {color: null, depth: null};
-const names = ['image-left hand', 'image-right hand', 'image-right foot', 'image-left foot'];
+const names = ['right hand', 'left hand', 'left foot', 'right foot'];
 const cornerNames = ['top-left', 'top-right', 'bottom-right', 'bottom-left'];
 let bubbles = Array.from({length: 12}, () => ({x: .08 + Math.random() * .84, y: .08 + Math.random() * .84, r: .025 + Math.random() * .025})), score = 0;
 
@@ -80,6 +80,14 @@ function updateSelection() {
   $('cornerStatus').textContent = points.length + ' / 4 projected corners';
   $('pairStatus').textContent = `Color points: ${colorPairs.length}/4 · Depth points: ${depthPairs.length}/4. ` +
     (depthPairs.length === 4 ? 'Body pairs complete. Save mapping.' : 'Next: ' + names[Math.min(depthPairs.length, 3)] + '.');
+  if (selection === 'surface') {
+    $('instruction').textContent = 'Click ONE solid wall/floor spot in DEPTH to measure the surface distance.';
+    return;
+  }
+  if (selection === 'chest') {
+    $('instruction').textContent = frozenId ? 'Click your chest ONCE in the frozen DEPTH image. This sets the closest playable distance.' : 'Capture body distance after a delay, then select your chest in the frozen depth image.';
+    return;
+  }
   if (selection === 'corners') $('instruction').textContent = points.length < 4
     ? 'Click the projected ' + cornerNames[points.length] + ' corner in COLOR. You stay at the PC.'
     : 'Projected corners selected. Capture a star pose to align your body with depth.';
@@ -98,13 +106,30 @@ $('previewMode').onchange = switchPreview;
 function showMode(mode) { $('previewMode').value = mode; switchPreview(); }
 switchPreview();
 for (const kind of ['color', 'depth']) {
-  $(kind + 'Frame').onclick = event => {
+  $(kind + 'Frame').onclick = async event => {
     if (!frameReady[kind] || !sizes()[kind]) return;
     const image = $(kind + 'Image');
     const rect = image.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
     const point = [(event.clientX - rect.left) / rect.width * sizes()[kind][0], (event.clientY - rect.top) / rect.height * sizes()[kind][1]];
     if (point.some((value, index) => value < 0 || value >= sizes()[kind][index])) return;
+    if (selection === 'surface' || selection === 'chest') {
+      if (kind !== 'depth' || $('previewMode').value === 'active') return notice('Select this measurement in the plain Depth preview.');
+      try {
+        const target = selection === 'surface' ? 'surface' : 'body';
+        if (target === 'body' && !frozenId) throw Error('Capture your body after a delay first.');
+        const result = await api('distance/sample', {target, x: point[0], y: point[1], capture_id: frozenId});
+        if (status) status.distance = result.distance;
+        updateDistanceReadouts(result.distance);
+        notice((target === 'surface' ? 'Surface' : 'Chest') + ' measured at ' + (result.sample_mm/1000).toFixed(3) + ' m from camera. ' + (target === 'surface' ? 'Now select the projected corners and align the cameras.' : 'Playable distance band saved. Return to live preview to play.'));
+        if (target === 'surface') openStep('areaStep');
+        else showMode('active');
+        selection = 'done';
+        $('instruction').textContent = target === 'surface' ? 'Surface distance saved. Select projected corners next.' : 'Both distances saved. Green shows the playable depth band.';
+      } catch (error) { notice(error.message); }
+      return;
+    }
+    if (selection === 'done') return;
     if (selection === 'corners') {
       if (kind !== 'color') return notice('Projected corners must be selected in the color image.');
       if (points.length >= 4) return notice('Four corners selected. Use Select / reset to change them.');
@@ -124,7 +149,7 @@ for (const kind of ['color', 'depth']) {
   };
 }
 action('connect', async () => {
-  const result = await api('camera', {enabled: true, runtime: $('runtime').value, color_index: Number($('cameraIndex').value), color_backend: $('colorBackend').value});
+  const result = await api('camera', {enabled: true, runtime: $('runtime').value, color_index: Number($('cameraIndex').value), color_backend: $('colorBackend').value, mirror_color: $('mirrorColor').checked, mirror_depth: $('mirrorDepth').checked});
   frozenId = null; handledCapture = null; contacts = [];
   settingsLoaded = false; // Reload server invalidation after a device change.
   notice(result.message + ' These settings will reconnect automatically next launch.');
@@ -136,18 +161,34 @@ action('retryColor', async () => {
   notice(result.message);
 });
 action('disconnect', async () => {
-  await api('camera', {enabled: false, runtime: $('runtime').value, color_index: Number($('cameraIndex').value), color_backend: $('colorBackend').value});
+  await api('camera', {enabled: false, runtime: $('runtime').value, color_index: Number($('cameraIndex').value), color_backend: $('colorBackend').value, mirror_color: $('mirrorColor').checked, mirror_depth: $('mirrorDepth').checked});
   frozenId = null; contacts = []; notice('Cameras disconnected.');
 });
+action('applyMirrors', async () => {
+  const result = await api('mirrors', {mirror_color: $('mirrorColor').checked, mirror_depth: $('mirrorDepth').checked});
+  if (result.changed) {
+    frozenId = null; handledCapture = null; frozenSizes = null;
+    settingsLoaded = false; contacts = []; points = []; colorPairs = []; depthPairs = [];
+    frameReady.color = frameReady.depth = false;
+    lastImages.color = lastImages.depth = null;
+    openStep('emptyStep'); showMode('both'); selection = 'surface';
+  }
+  notice(result.message);
+});
+action('selectSurface', async () => {
+  await api('capture', undefined, 'DELETE'); frozenId = null; handledCapture = null; frozenSizes = null;
+  selection = 'surface'; showMode('depth'); frameReady.depth = false; updateSelection();
+});
+$('selectChest').onclick = () => { selection = 'chest'; showMode('depth'); updateSelection(); };
 async function captureAfter(kind) {
   const result = await api('capture', {kind, delay: Number($('delay').value)});
   frozenId = null; handledCapture = null; frozenSizes = null;
   if (kind === 'pose') { colorPairs = []; depthPairs = []; history = []; selection = 'pairs'; }
-  notice(kind === 'pose' ? 'Walk into view and hold a star pose until the countdown finishes. Then return to this PC.' : 'Move out of view until the empty surface is captured.');
+  notice(kind === 'pose' ? 'Hold a star pose until capture finishes, then select the same physical hands/feet in both images.' : 'Stand closer to the camera at your desired upper boundary. Hold still until captured, then return to click your chest once.');
   if (status) status.capture = result;
   updateSelection();
 }
-action('emptyCapture', () => captureAfter('background'));
+action('rangeCapture', () => captureAfter('range'));
 action('poseCapture', () => captureAfter('pose'));
 action('cancel', async () => {
   await api('capture', undefined, 'DELETE'); frozenId = null; handledCapture = null;
@@ -167,8 +208,14 @@ $('undo').onclick = () => {
   updateSelection();
 };
 function bounds() {
-  return {near_mm: Math.round(Number($('near').value) * 10), far_mm: Math.round(Number($('far').value) * 10),
+  return {near_mm: status?.settings.near_mm || 15, far_mm: status?.settings.far_mm || 1500,
     min_area: Number($('area').value), body: $('interaction').value === 'body'};
+}
+function updateDistanceReadouts(distance) {
+  const d = distance || {};
+  $('surfaceStatus').textContent = d.surface_mm == null ? 'Surface not selected.' : 'Surface / lower boundary: ' + (d.surface_mm/1000).toFixed(3) + ' m from camera.';
+  $('bandStatus').textContent = d.closest_mm == null ? 'Chest / upper boundary not selected.' : 'Chest / upper boundary: ' + (d.closest_mm/1000).toFixed(3) + ' m from camera. ' +
+    (d.ready ? 'Playable thickness: ' + ((d.surface_mm-d.closest_mm-d.margin_mm)/10).toFixed(1) + ' cm.' : 'Select a valid surface and closer chest point.');
 }
 action('save', async () => {
   if (points.length !== 4) throw Error('Select four projected corners in the color image first.');
@@ -176,27 +223,26 @@ action('save', async () => {
   await api('calibration', {space: 'color', points, color_points: colorPairs, depth_points: depthPairs,
     color_size: sizes().color, depth_size: sizes().depth, ...bounds()});
   openStep('boundsStep');
-  notice('Saved. Return to live preview and move your body to test. Recapture the empty surface if it changed.');
+  notice('Alignment saved. Set the closest body distance in step 5, then return to live preview.');
 });
 action('applyBounds', async () => {
-  await api('bounds', bounds()); showMode('active'); notice('Distance bounds saved. Green shows included depth regions.');
-});
-action('suggest', async () => {
-  const result = await api('bounds/suggest', {});
-  $('near').value = result.near_mm / 10; $('far').value = result.far_mm / 10;
-  showMode('active'); notice(result.message + ' Click Apply distance bounds to save.');
+  await api('distance/options', {margin_mm: Math.round(Number($('margin').value)*10)});
+  await api('bounds', bounds()); lastImages.depth = null;
+  showMode('active'); notice('Surface margin and interaction settings saved. Green shows the playable depth band.');
 });
 function initializeForms(data) {
   if (!cameraFormLoaded) {
     $('runtime').value = data.camera_settings.runtime;
     $('cameraIndex').value = data.camera_settings.color_index;
     $('colorBackend').value = data.camera_settings.color_backend || 'auto';
+    $('mirrorColor').checked = !!data.camera_settings.mirror_color;
+    $('mirrorDepth').checked = !!data.camera_settings.mirror_depth;
     cameraFormLoaded = true;
   }
   if (!settingsLoaded) {
     points = data.settings.space === 'color' ? data.settings.points || [] : [];
     colorPairs = data.settings.color_points || []; depthPairs = data.settings.depth_points || [];
-    $('near').value = data.settings.near_mm / 10; $('far').value = data.settings.far_mm / 10;
+    $('margin').value = (data.distance?.margin_mm ?? 10)/10;
     $('area').value = data.settings.min_area; $('interaction').value = data.settings.body ? 'body' : 'contact';
     settingsLoaded = true; updateSelection();
   }
@@ -204,24 +250,26 @@ function initializeForms(data) {
 function updateStatus(data) {
   $('status').textContent = (data.camera ? 'Depth connected' : data.message) + ' · ' + (data.color_size ? 'Color connected' : data.color_message);
   $('cameraStatus').textContent = 'Depth: ' + (data.camera ? 'ready' : data.message) + '\nColor: ' + (data.color_size ? 'ready · ' + data.color_backend + ' · camera ' + data.camera_settings.color_index : data.color_message);
+  updateDistanceReadouts(data.distance);
   const c = data.capture;
   $('captureStatus').textContent = c.phase === 'countdown'
-    ? `${c.kind === 'pose' ? 'Hold your star pose' : 'Clear the surface'} · ${c.remaining}s`
+    ? `${c.kind === 'pose' ? 'Hold your star pose' : c.kind === 'range' ? 'Stand at your closest playable position' : 'Clear the surface'} · ${c.remaining}s`
     : c.phase === 'ready' && c.kind === 'pose' ? 'Frozen body capture · return to the PC and select points'
-    : c.phase === 'ready' ? 'Empty surface captured · ready for your body pose'
+    : c.phase === 'ready' && c.kind === 'range' ? 'Frozen body distance · click your chest once in Depth'
+    : c.phase === 'ready' ? 'Capture ready'
     : c.phase === 'failed' ? 'Capture failed: ' + c.error : 'Live preview';
   const missing = [];
   if (!data.camera || !data.color_size) missing.push('connect cameras');
-  if (!data.background) missing.push('capture empty surface');
+  if (!data.distance?.ready) missing.push('select surface + chest distances');
   if (!data.calibrated || !data.aligned) missing.push('save calibration');
   $('readiness').textContent = missing.length ? missing.join(' · ') : 'BODY INPUT READY';
   if (c.phase === 'ready' && c.kind === 'background' && c.id !== backgroundHandled) {
     backgroundHandled = c.id; openStep('areaStep');
   }
-  if (c.phase === 'ready' && c.kind === 'pose' && c.id !== handledCapture) {
-    handledCapture = c.id; frozenId = c.id; openStep('poseStep');
+  if (c.phase === 'ready' && (c.kind === 'pose' || c.kind === 'range') && c.id !== handledCapture) {
+    handledCapture = c.id; frozenId = c.id; openStep(c.kind === 'pose' ? 'poseStep' : 'boundsStep');
     frozenSizes = {color: c.color_size, depth: c.depth_size};
-    selection = 'pairs'; showMode('both'); frameReady.color = frameReady.depth = false;
+    selection = c.kind === 'pose' ? 'pairs' : 'chest'; showMode(c.kind === 'pose' ? 'both' : 'depth'); frameReady.color = frameReady.depth = false;
     updateSelection();
   }
 }
@@ -234,11 +282,11 @@ async function refreshImages() {
   const query = new URLSearchParams({t: String(Date.now())});
   if (currentId) query.set('capture_id', currentId);
   const depthQuery = new URLSearchParams(query);
-  if (active) { depthQuery.set('overlay', 'true'); depthQuery.set('near', bounds().near_mm); depthQuery.set('far', bounds().far_mm); }
+  if (active) depthQuery.set('overlay', 'true');
   try {
     await Promise.all(['color', 'depth'].map(async kind => {
       if ((kind === 'color' && $('colorPanel').hidden) || (kind === 'depth' && $('depthPanel').hidden)) return;
-      const imageKey = currentId + ':' + kind + ':' + (kind === 'depth' && active ? bounds().near_mm + ':' + bounds().far_mm : 'plain');
+      const imageKey = currentId + ':' + kind + ':' + (kind === 'depth' && active ? JSON.stringify(status.distance) : 'plain');
       if (currentId && frameReady[kind] && lastImages[kind] === imageKey) return;
       try {
         const response = await fetch('/api/' + kind + '.jpg?' + (kind === 'depth' ? depthQuery : query));
@@ -312,7 +360,7 @@ function draw() {
     ctx.textAlign = 'center'; ctx.fillStyle = '#62ffe0'; ctx.font = 80*d+'px system-ui';
     ctx.fillText(status.capture.remaining, w/2, h*.5);
     ctx.font = 22*d+'px system-ui';
-    ctx.fillText(status.capture.kind === 'pose' ? 'Spread arms and feet · hold still' : 'Move out of view · empty surface', w/2, h*.65);
+    ctx.fillText(status.capture.kind === 'pose' ? 'Spread arms and feet · hold still' : status.capture.kind === 'range' ? 'Stand closer · hold still' : 'Move out of view', w/2, h*.65);
     ctx.textAlign = 'left';
   }
   requestAnimationFrame(draw);

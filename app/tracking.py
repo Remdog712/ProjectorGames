@@ -9,7 +9,7 @@ def homography(points):
         raise ValueError('Select four finite camera points.')
     contour = p.reshape(-1, 1, 2)
     if not cv2.isContourConvex(contour) or abs(cv2.contourArea(contour)) < 100:
-        raise ValueError('Points must form a convex area in clockwise order. Spread hands and feet farther apart.')
+        raise ValueError('Select four points around the outline without crossing edges. Spread hands and feet farther apart.')
     return cv2.getPerspectiveTransform(p, np.float32([[0, 0], [1, 0], [1, 1], [0, 1]]))
 
 
@@ -21,10 +21,11 @@ def interaction_mask(depth, background, near_mm=15, far_mm=1500):
     return cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
 
 
-def detect(depth, background, matrix, near_mm=15, far_mm=100, min_area=100, body=False):
-    if background is None or matrix is None:
+def detect(depth, background, matrix, near_mm=15, far_mm=100, min_area=100, body=False, mask=None):
+    if matrix is None or (mask is None and background is None):
         return []
-    mask = interaction_mask(depth, background, near_mm, far_mm)
+    if mask is None:
+        mask = interaction_mask(depth, background, near_mm, far_mm)
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     hits = []
     for c in sorted(contours, key=cv2.contourArea, reverse=True)[:16]:

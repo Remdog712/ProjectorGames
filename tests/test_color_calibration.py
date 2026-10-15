@@ -11,6 +11,9 @@ from app.tracking import detect
 
 class ColorCalibrationTests(unittest.TestCase):
     def setUp(self):
+        old_distance = main.distance_settings.copy()
+        self.addCleanup(lambda: main.distance_settings.update(old_distance))
+        main.distance_settings.update(active=False, surface_mm=None, closest_mm=None, depth_size=None)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.old_state = main.state.copy()

@@ -15,12 +15,15 @@
 <label>Windows color capture<select id="colorBackend"><option value="auto">Auto · DirectShow then Media Foundation</option><option value="dshow">DirectShow</option><option value="msmf">Media Foundation · Windows Camera alternative</option></select></label>
 <button id="retryColor" class="secondary">Retry color only · keep depth running</button>
 <div class="row"><button id="connect">Connect / reconnect</button><button id="disconnect" class="secondary">Disconnect</button></div>
+<label class="check"><input id="mirrorColor" type="checkbox"> Mirror color horizontally</label>
+<label class="check"><input id="mirrorDepth" type="checkbox"> Mirror depth horizontally</label>
+<button id="applyMirrors" class="secondary">Apply mirror orientation</button>
+<p class="hint">Move one hand: it should appear on the same side in both previews. Flip one view if needed, then reselect alignment and distance points. This changes tracking coordinates as well as the preview.</p>
 <p id="cameraStatus" class="hint" role="status"></p>
 </details>
-<details name="setup" id="emptyStep"><summary>2 · Capture the empty wall or floor</summary>
-<label>Time to get into position<select id="delay"><option value="5">5 seconds</option><option value="10" selected>10 seconds</option><option value="15">15 seconds</option><option value="20">20 seconds</option></select></label>
-<p class="hint">Keep furniture and equipment fixed. Click below, move out of the camera view, then wait for capture. This is your zero-distance reference.</p>
-<button id="emptyCapture">Capture empty surface after delay</button>
+<details name="setup" id="emptyStep"><summary>2 · Click the surface distance</summary>
+<p class="hint">Click below, then click one solid wall/floor spot in the depth image. Its measured distance becomes the surface / lower boundary. No empty-scene capture or touching the wall is needed.</p>
+<button id="selectSurface">Select surface point</button><p id="surfaceStatus" class="measurement">Surface not selected.</p>
 </details>
 <details name="setup" id="areaStep"><summary>3 · Mark the projected area</summary>
 <button id="project" class="primary">Open projector window ↗</button>
@@ -32,19 +35,21 @@
 <p class="hint">Click capture, stand near the wall facing the camera, spread your arms and feet like a star, and hold still until the countdown finishes. Return to the PC: both images stay frozen on the server.</p>
 <button id="poseCapture">Capture star pose after delay</button>
 <button id="selectPairs" class="secondary">Select / reset body points</button>
-<p id="pairStatus" class="hint">Select the same four points in color and depth: image-left hand, image-right hand, image-right foot, image-left foot. Use visible points on your body; you do not need to touch a corner.</p>
+<p id="pairStatus" class="hint">Select the same four points in color and depth: your right hand, your left hand, your left foot, your right foot. Always choose the SAME physical limb in both images, even if its image position is mirrored. Use visible points on your body; you do not need to touch a corner.</p>
 <button id="undo" class="secondary">Undo last selection</button>
 <button id="save" class="primary">Save play area + body alignment</button>
 <p class="hint">Pairing approximates color/depth alignment near the surface. Keep the pose close to the wall and check ring positions afterward. You can redo pairing without resetting the projected corners.</p>
 </details>
-<details name="setup" id="boundsStep"><summary>5 · Set distance from the surface</summary>
-<label>Interaction<select id="interaction"><option value="body">Whole body · silhouette points</option><option value="contact">Near-surface contact · region centers</option></select></label>
-<p class="hint">Distances are how much closer you are to the camera than the empty wall/floor, measured along the camera view. They are not your standing height.</p>
-<div class="row"><label>Ignore closer than (cm)<input id="near" type="number" min="0.1" max="499.9" step="0.1" value="1.5"></label><label>Ignore farther than (cm)<input id="far" type="number" min="0.2" max="500" step="0.1" value="150"></label></div>
-<button id="suggest" class="secondary">Suggest bounds from frozen body pose</button>
-<p class="hint">Green in the Active regions preview shows included pixels. Try 1.5–150 cm for body movement; a narrow range such as 1.5–10 cm focuses on objects close to the surface. Suggestions include all changed objects; check the preview.</p>
+<details name="setup" id="boundsStep"><summary>5 · Click the closest body distance</summary>
+<p class="hint">Stand at the closest position you want to allow. Click capture, move into position, and hold still until the countdown finishes. Come back to the PC and click your chest ONCE in the frozen depth image.</p>
+<button id="rangeCapture">Capture body distance after delay</button><button id="selectChest" class="secondary">Select chest in frozen depth</button>
+<p id="bandStatus" class="measurement">Select a surface point, then a chest point.</p>
+<p class="hint">Everything between the chest depth and the surface depth can interact inside the projected play area. Anything closer to the camera than your chest, or behind the selected surface, is ignored. These are camera depth distances, not anatomical height or a fitted wall plane.</p>
+<label>Surface noise margin (cm)<input id="margin" type="number" min="0" max="20" step="0.1" value="1"></label>
+<p class="hint">By default, ignore the last 1 cm next to the surface so the wall itself does not trigger rings. Set 0 to include the exact selected surface distance. Green in Active regions shows the saved playable band.</p>
+<label>Interaction<select id="interaction"><option value="body">Whole body · silhouette points</option><option value="contact">Region centers</option></select></label>
 <label>Ignore regions smaller than (pixels)<input id="area" type="number" min="10" max="100000" value="100"></label>
-<button id="applyBounds">Apply distance bounds</button>
+<button id="applyBounds">Apply margin + interaction settings</button>
 </details>
 <details name="setup" id="playStep"><summary>Play</summary>
 <label>Game<select id="game"><option value="rings">Body rings · tracking test</option><option value="bubbles">Bubble garden</option></select></label>
@@ -57,6 +62,7 @@
 <div class="panel">
 <div class="panel-heading"><h2>Camera setup</h2><select id="previewMode" aria-label="Preview mode"><option value="color">Color</option><option value="depth">Depth</option><option value="both" selected>Color + depth</option><option value="active">Active regions</option></select></div>
 <div class="row"><button id="live" class="secondary">Return to live preview</button><button id="cancel" class="secondary">Cancel countdown</button></div>
+<label>Capture delay<select id="delay"><option value="5">5 seconds</option><option value="10" selected>10 seconds</option><option value="15">15 seconds</option><option value="20">20 seconds</option></select></label>
 <p id="captureStatus" role="status">Live preview</p><p id="instruction" class="instruction">Connect the cameras to begin.</p>
 <div id="previews" class="previews">
 <div id="colorPanel"><h3>Color · projected corners are visible here</h3><div id="colorFrame" class="camera-frame"><img id="colorImage" alt="Live color camera"><div id="colorMarkers" class="markers"></div><span class="placeholder">Waiting for color camera…</span></div></div>
@@ -64,7 +70,7 @@
 </div>
 <p id="notice" role="status"></p>
 </div>
-<div class="panel game-panel"><div class="panel-heading"><h2>Live game</h2><span id="readiness">BODY INPUT</span></div><canvas id="stage"></canvas><p class="hint">Rings follow depth regions, not your mouse. Green regions and body points should change as you move. A new empty-surface capture is needed after each app restart.</p></div>
+<div class="panel game-panel"><div class="panel-heading"><h2>Live game</h2><span id="readiness">BODY INPUT</span></div><canvas id="stage"></canvas><p class="hint">Rings follow depth regions, not your mouse. Green regions and body points should change as you move. Surface and chest distances are saved for the next launch. Reselect them after moving the camera or surface.</p></div>
 </section>
 </main>
 <script>
