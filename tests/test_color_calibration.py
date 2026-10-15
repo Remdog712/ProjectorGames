@@ -21,7 +21,7 @@ class ColorCalibrationTests(unittest.TestCase):
             points=[(10,20),(208,20),(208,218),(10,218)],
             depth_points=[(0,0),(99,0),(99,99),(0,99)],
             color_points=[(10,20),(208,20),(208,218),(10,218)],
-            color_size=(240,240),depth_size=(100,100))
+            color_size=(240,240),depth_size=(100,100),body=False)
 
     def test_persist_and_map_depth_via_color(self):
         with patch.object(main, 'DATA', Path(self.temp.name)):

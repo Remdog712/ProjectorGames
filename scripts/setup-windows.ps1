@@ -10,4 +10,4 @@ if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Dependency validation failed.' }
 & .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 if ($LASTEXITCODE -ne 0) { throw 'Tracking tests failed.' }
-Write-Host 'Setup complete. Run scripts\start-windows.ps1 to start in simulation mode.'
+Write-Host 'Setup complete. Run scripts\start-windows.ps1 to open the GUI and connect your cameras.'

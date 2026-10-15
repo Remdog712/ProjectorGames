@@ -1,10 +1,57 @@
 # ProjectorGames
 
-A local projector playground with a browser setup GUI, four-corner homography calibration, depth-relative contact detection, and extensible canvas games. The first game draws rings around contact blobs; a bubble game demonstrates another interaction. Mouse and multitouch simulation work without hardware.
+Local projector games controlled by depth-camera body movement. Includes a setup GUI, color/depth previews, delayed captures, color-to-projector mapping, and depth-to-color alignment. Astra Pro depth uses OpenNI2; its separate color camera uses Windows UVC capture.
 
-## Run
+## Windows: launch from the computer
 
-Python 3.12 recommended. From this checkout:
+Install 64-bit Python 3.12 with the Python launcher. Connect the camera and install Orbbec's matching, trusted x64 OpenNI2 runtime and USB driver. Keep `OpenNI2.dll` and its accompanying folders together. Close Windows Camera and other viewers.
+
+**Double-click `Start ProjectorGames.cmd`.** It creates the Python environment if needed, installs the pinned direct dependencies (including the OpenNI Python binding), starts the app, and opens its browser GUI. Keep the terminal open; Ctrl+C stops the server. No PowerShell execution-policy change or virtual environment activation is needed.
+
+After pulling an update, stop the previous server and double-click again. The launcher installs updated requirements before startup. No raw DLL downloads or disabling TLS/driver signature checks are needed.
+
+### First-time camera connection
+
+In **1 · Connect cameras**, check the runtime folder and click **Connect / reconnect**. The app searches `C:\Program Files\Orbbec` for `OpenNI2.dll`; you can paste the correct folder or full DLL path. Choose the color camera number: commonly 0 or 1; if you see your PC webcam, try another number and reconnect. The GUI shows depth and color errors separately.
+
+Connection settings are saved in `.local/camera.json` and reconnect automatically on future launches. A saved GUI configuration takes precedence over old environment variables. If a driver hangs during disconnection, restart the app. Changing camera number/runtime clears the calibration and empty surface; calibrate the newly selected camera before playing.
+
+## Calibrate alone, entirely from the PC
+
+No helper and no touching a projected wall corner are required.
+
+1. **Empty surface:** choose a 5–20 second delay, click **Capture empty surface after delay**, and leave the camera view. A countdown appears in the GUI and on the projector. Keep the wall/floor and furniture unchanged.
+2. **Projected area:** use Windows **Win+P → Extend**. Open the projector window, move it onto that display, and double-click its game area for fullscreen. Enable **Show calibration rectangle**. From the PC, select the four outer projected rectangle corners in the **color** preview: top-left, top-right, bottom-right, bottom-left. These define the play area's edges; they are separate from the distance bounds.
+3. **Star pose:** click **Capture star pose after delay**, go near the wall, face the camera, and spread hands and feet. Hold still until the countdown ends, then return to the PC. Both camera images are retained **server-side**, so they stay frozen while you select points.
+4. **Body pairing:** select the same visible physical points in each frozen image, in this order: image-left hand in color, same hand in depth; image-right hand in color/depth; image-right foot in color/depth; image-left foot in color/depth. Spread the four points into a convex shape. Follow the instruction above the images. Use **Undo last selection** to fix a click; resetting body pairs leaves the projected corners intact.
+5. Click **Save play area + body alignment**, then **Return to live preview** and test movement. **Your body controls the game. Mouse movement never generates game contacts.**
+
+Select **Color**, **Depth**, **Color + depth**, or **Active regions** to preview. A single-preview view automatically switches from color to depth when pairing points. You can cancel any countdown or recapture a pose. Near a wall, pose close to the interaction plane without needing to touch it. For floor projection, use visible corresponding body points close to the floor plane or another flat alignment target; a standing pose far above the floor is not an accurate floor-plane calibration.
+
+## Lower and upper distance bounds
+
+Both bounds measure the difference from the captured empty surface, along the camera's depth axis—not height on the wall:
+
+- **Ignore closer than:** lower bound, in centimeters. Pixels nearer the surface than this are ignored. A small positive gap helps reject wall noise.
+- **Ignore farther than:** upper bound, in centimeters. Pixels farther in front of the surface than this are ignored.
+
+Start at **1.5–150 cm** for body movement. A band like **1.5–10 cm** concentrates on near-surface interaction. For a tilted camera these are depth-axis distances, not perpendicular distances to a fitted 3D wall plane.
+
+After an empty-surface capture and frozen body capture, **Suggest bounds from frozen body pose** estimates a range from changed depth pixels. Review **Active regions**: included pixels are green, the remainder is dimmed. Suggestions include any changed objects, not just a recognized person. Adjust values and click **Apply distance bounds** to persist them. Unsaved input previews the proposed band; gameplay uses the last applied/saved values.
+
+**Whole body** mode samples region centers and silhouette extremes so hands/feet connected to the torso can interact. It is geometric foreground tracking, **not anatomical joint recognition**. **Near-surface contact** mode uses region centers. Minimum region area filters small blobs. Multiple people may merge; invalid/missing depth cannot produce interactions.
+
+## Accuracy and retained settings
+
+Two homographies map depth pixels → color pixels → projector coordinates. The paired transform approximates one flat plane; it is not factory RGB/depth registration, lens correction, or a full 3D calibration. Alignment accuracy changes away from the calibration plane. RGB/depth acquisition is not hardware synchronized; hold the pose still. Check rings at multiple positions and re-pair near the interaction surface if offset.
+
+Mapping and bounds live in `.local/calibration.json`; camera settings live in `.local/camera.json`. Use `PROJECTORGAMES_DATA` to change the local settings directory. Empty surface and frozen images stay in memory only: **capture a fresh empty surface each app restart**. Recalibrate when moving equipment, switching camera index, changing resolution, or moving between wall and floor. Contacts are suppressed when expected frame dimensions do not match calibration.
+
+The cloud machine has no Astra or projector. Automated tests verify synthetic depth/color data and browser behavior; actual Windows SDK loading, UVC capture, alignment accuracy, and body interaction require testing on the installation PC.
+
+## Python development
+
+From the existing checkout:
 
 ```sh
 python -m venv .venv
@@ -12,67 +59,20 @@ python -m venv .venv
 .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Open the local server in a browser. On Windows use `.venv\Scripts\python.exe`. Click **Open projector window**, move that window onto the projector display, and double-click the play area for fullscreen. The control screen stays on the operator display. Game, ring color, size, and simulation settings synchronize between windows on the same browser origin.
+On Windows use `.venv\Scripts\python.exe`. You can run `scripts/launch.py` with that Python to open the browser after the server is ready. GUI camera connection requires no shell variables. Existing `PROJECTORGAMES_CAMERA=openni`, `OPENNI2_REDIST`, and `PROJECTORGAMES_COLOR_INDEX` remain first-launch defaults when saved camera settings do not exist.
 
-## Astra hardware (optional, requires device validation)
+The unauthenticated API controls local hardware and writes local settings. Keep it bound to loopback. No account, secret, or cloud service is required.
 
-The hardware adapter targets **legacy Astra devices supported by OpenNI2**. Astra variants have different SDK requirements; this adapter is not claimed compatible with every Astra or Astra 2. Confirm the model and host OS before choosing the vendor SDK. Install Orbbec's matching, trusted OpenNI2 runtime and USB drivers/permissions, then install the optional Python binding with `.venv/bin/python -m pip install openni==2.3.0`. Set `OPENNI2_REDIST` to its runtime library directory if not automatically found. Start with `PROJECTORGAMES_CAMERA=openni` in the environment. No credentials or cloud service are required. Do not disable driver signatures or TLS checks to install dependencies.
+## Extend games
 
-The cloud environment has no physical camera, projector, or USB passthrough; actual camera acquisition and touch accuracy must be validated on the installation machine. Camera errors appear in the GUI. Restart the server after correcting a device error or disconnect.
-
-## Calibration
-
-1. Fix the camera and projector in place, covering the same flat wall or floor. Use simulation first to verify projection and games.
-2. Show corner targets on the projector. In the camera depth preview, click the projected area's top-left, top-right, bottom-right, bottom-left corners, as viewed in **projector coordinates**, even if the camera is rotated.
-3. Save mapping, clear all people/objects from the surface, and capture its depth. The background is held only in memory; recapture after every server restart. Mapping is saved locally in `.local/calibration.json` (override with `PROJECTORGAMES_DATA`). Recalibrate after resolution, mounting, or surface changes.
-4. Disable simulation. Tune the near/far depth band and minimum blob area. Defaults detect objects 15–100 mm closer to the camera than the empty surface. These are proximity contacts, not skeletal hand recognition or proof of physical touch. Feet and hands can produce multiple or merged blobs. Invalid depth is excluded.
-
-Homography assumes a planar surface and a stable camera viewpoint. It maps image-space contact centroids, with parallax away from the plane. Accurate physical touch may require a fitted 3D plane, camera intrinsics, lens correction, temporal tracking, and hardware-specific tuning. A single background frame is a starting point, not a production calibration system. Keep projected intensity comfortable and supervise children; mount equipment securely.
-
-## Add games
-
-The canvas loop in `app/static/app.js` supplies normalized contacts `{x, y}` in `[0,1]`, independent of resolution. Add a game option in `index.html` and a renderer in the loop. Camera acquisition (`camera.py`), detection/mapping (`tracking.py`), and HTTP endpoints (`main.py`) are independent of game rendering. Current choices and styling are in the browser; shared geometry and thresholds are stored by the server. The local API is unauthenticated: bind to loopback unless you deliberately secure access.
+`app/static/app.js` consumes normalized depth contacts `{x,y}` in `[0,1]`, independent of projector resolution. Add an option in `index.html` and a renderer in the game loop. Rendering is separate from `camera.py` (device acquisition), `capture.py` (delayed frozen captures), `tracking.py` (surface difference and silhouette samples), and `main.py` (HTTP/configuration). Ring color, radius, game choice, and calibration rectangle synchronize across operator/projector windows on the same browser origin.
 
 ## Validate
 
 ```sh
 .venv/bin/python -m unittest discover -s tests -v
 node --check app/static/app.js
+.venv/bin/python -m pip check
 ```
 
-Tests cover synthetic depth contacts, mapping, invalid depth, threshold rejection, and calibration errors. Hardware behavior remains a separate on-device check.
-
-## Windows PC installation: wall and floor projection
-
-Install 64-bit Python 3.12 with the Python launcher. Open PowerShell in the project folder:
-
-```powershell
-.\scripts\setup-windows.ps1
-.\scripts\start-windows.ps1
-```
-
-If your machine blocks PowerShell scripts, follow your organization's script policy. You can also run the equivalent Python commands above directly using `.venv\Scripts\python.exe`; virtual environment activation is unnecessary.
-
-In Windows display settings choose **Extend these displays**. Open the GUI in Edge or Chrome, open the projector window, drag it to the projector display, and double-click the play area for fullscreen. Keep the control GUI on the PC screen. Verify mouse simulation before connecting a camera.
-
-For floor play, aim the projector and camera at the floor. Use the same four-corner mapping and empty-surface capture as for a wall. Camera orientation may differ: always select corners in the order shown by the projector, not the apparent order in the camera image. Place the camera so feet are visible without participants obscuring most of the surface. Recalibrate when moving between floor and wall installations.
-
-Before installing a camera runtime, identify the device from the label on its underside/back or Windows **Device Manager → device Properties → Details → Hardware Ids**. Record the product name and USB VID/PID; do not assume all Astra models use OpenNI2. Once a legacy OpenNI2-compatible model and matching 64-bit vendor runtime have been confirmed:
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install openni==2.3.0
-.\scripts\start-windows.ps1 -Camera -OpenNI2Redist 'C:\path\to\OpenNI2\Redist'
-```
-
-The path is an example, not an included driver. Device-specific runtime installation, USB access, camera streaming, and wall/floor contact accuracy must be verified on the Windows PC. The launch scripts have not been executed on Windows in the cloud environment.
-
-## Color calibration on the Astra Pro (Windows)
-
-The calibration preview now uses the **color image**, so projected wall targets are visible. The Astra Pro exposes RGB as a separate UVC camera: OpenCV opens camera index 0 by default. If that shows your laptop webcam, stop the server and set `$env:PROJECTORGAMES_COLOR_INDEX = "1"` in PowerShell, then restart. Try another index if necessary. Close Windows Camera and other camera viewers before starting. Color errors appear separately from depth errors.
-
-1. Show projector corner targets and click top-left, top-right, bottom-right, bottom-left in the **upper color image**.
-2. Expand **Align depth to color**. Because RGB and depth are different sensors, selecting RGB corners alone cannot accurately map depth contacts. Click **Start / reset alignment pairs**.
-3. Hold a hand near the wall at a position near the top-left of the play area. Freeze the images, then click the **same fingertip** in the upper color image and lower depth image. Resume, move to a position near top-right, and repeat for bottom-right and bottom-left. Spread the four points over the play area, forming a convex quadrilateral. You do not need to touch the exact projected corners for these alignment pairs.
-4. Save mapping, remove your hand, capture the empty wall, then disable simulation. Verify rings at several wall positions. Adjust/re-pair if there is an offset.
-
-This paired homography is an approximation for a flat interaction plane, not factory RGB/depth registration or full 3D calibration. Images are acquired independently; hold the hand still before freezing. Alignment degrades with distance from the plane. The app suppresses color-mapped contacts until alignment exists and frame resolutions match the saved calibration. Recalibrate after switching cameras, moving equipment, or changing resolutions. Previous depth-only mapping should be replaced using the color workflow. RGB/depth capture must still be verified on your Windows hardware; automated tests use synthetic frames.
+Tests exercise mapping, depth bands, whole-body extremes, invalid depth, configuration persistence, delayed/frozen capture, cancellation, missing cameras, stale frames, and preview encoding. Windows launchers and vendor device behavior must be checked on Windows.
