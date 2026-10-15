@@ -5,7 +5,7 @@ import java.util.*;
 public final class ProjectorView extends PApplet {
   final Calibrator owner;final int screen;
   ProjectorView(Calibrator tool,int display){owner=tool;screen=display;}
-  public void settings(){if(java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices().length>1)fullScreen(screen);else size(1024,768);}
+  public void settings(){if(java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices().length>1)fullScreen(screen);else size(1024,768);pixelDensity(1);}
   public void setup(){surface.setTitle("Projector calibration grid");frameRate(30);}
   public void draw(){
     background(0);List<double[]> points=Mapping.grid(owner.grid);

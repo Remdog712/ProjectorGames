@@ -68,6 +68,8 @@ Validation performed in the cloud:
 - OpenNI C ABI using a synthetic native fixture: padded row stride, both depth-unit modes, frame release and device cleanup.
 - A real Processing/Java2D window on a virtual display, using automated mouse clicks: nine selections, fit, save, depth view, known depth measurement, grid reset and reload.
 
+Both windows explicitly use `pixelDensity(1)`. The control window chooses its initial size before creating the drawing surface, avoiding a resize during startup on Windows/high-density displays.
+
 The original Astra Pro and your Windows OpenNI2 runtime are not attached to the cloud machine. Actual Windows DLL loading, USB color/depth capture and physical projector accuracy still need checking on your PC. Native driver errors are shown in the tool and printed to the Processing console.
 
 Developer compilation (JDK 17+; use 21 for the supplied checks):

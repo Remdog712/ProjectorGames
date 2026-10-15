@@ -15,6 +15,7 @@ public final class ProcessingUiChecks {
     int result=0;
     try{
       waitFor(()->app.tool!=null&&app.tool.ready&&app.tool.displayFrame!=null,"Processing did not start: "+(app.tool==null?"no tool":app.tool.message));
+      if(app.pixelDensity!=1)throw new AssertionError("Calibration window must use pixelDensity(1)");
       Robot robot=new Robot();robot.setAutoDelay(60);
       Component canvas=(Component)app.getSurface().getNative();
       Runnable front=()->{Window w=SwingUtilities.getWindowAncestor(canvas);if(w!=null)w.toFront();};
@@ -39,7 +40,11 @@ public final class ProcessingUiChecks {
       if(Math.abs(app.tool.measurement-2000)>3)throw new AssertionError("Scaled click did not map to depth pixel");
       EventQueue.invokeAndWait(front);Thread.sleep(100);
       Point o=canvas.getLocationOnScreen();ImageIO.write(robot.createScreenCapture(new Rectangle(o.x,o.y,app.width,app.height)),"png",sketch.resolve("processing-ui.png").toFile());
-      System.out.println("PASS: real Processing window, nine Robot clicks, fit, save, depth toggle and measurement, grid reset, reload.");
+      app.tool.openProjector();
+      waitFor(()->app.tool.projector.frameCount>5,"Projector window did not render");
+      if(app.tool.projector.pixelDensity!=1)throw new AssertionError("Projector must use pixelDensity(1)");
+      app.tool.projector.exit();
+      System.out.println("PASS: projector rendering at density 1; real Processing window, nine Robot clicks, fit, save, depth toggle and measurement, grid reset, reload.");
     } catch(Throwable error){error.printStackTrace();result=1;} finally {if(app.tool!=null)app.tool.close();System.exit(result);}
   }
 }

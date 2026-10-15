@@ -26,7 +26,7 @@ public final class Calibrator {
   static final int BG=0xff111923,PANEL=0xff1c2938,INK=0xffeaf2fb,ACCENT=0xff62ffe0;
 
   public Calibrator(PApplet parent) {
-    p=parent;p.frameRate(30);p.getSurface().setResizable(true);java.awt.Rectangle bounds=GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice().getDefaultConfiguration().getBounds();p.getSurface().setSize(Math.min(1240,bounds.width-50),Math.min(850,bounds.height-90));data=Paths.get(p.sketchPath("data"));loadSettings();
+    p=parent;p.frameRate(30);p.getSurface().setResizable(true);data=Paths.get(p.sketchPath("data"));loadSettings();
     p.registerMethod("dispose",this);
     new Thread(()->{try{nu.pattern.OpenCV.loadLocally();ready=true;message="Choose runtime, connect, then calibrate or measure. No web server needed.";pendingLoad=true;}catch(Throwable e){message="Library load failed: "+e.getMessage();}},"Load OpenCV").start();
     if(Boolean.getBoolean("projectorgames.demo"))demo=true;
