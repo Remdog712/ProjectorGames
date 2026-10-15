@@ -58,6 +58,17 @@ public final class ProcessingUiChecks {
       waitFor(()->app.tool.projector.frameCount>5,"Projector window did not render");
       if(app.tool.projector.pixelDensity!=1)throw new AssertionError("Projector must use pixelDensity(1)");
       app.tool.projector.exit();
+      if(args.length>1){
+        Mapping saved=app.tool.mapping;
+        app.tool.runtime=args[1];app.tool.demo=false;app.tool.colorView=false;app.tool.cameraEnabled=true;
+        app.tool.switchCamera();
+        waitFor(()->app.tool.depth.latest!=null&&!app.tool.connecting,"Depth-only switch failed: "+app.tool.message+" / "+app.tool.depth.status);
+        if(!app.tool.color.status.equals("Color disconnected."))throw new AssertionError("Color was not stopped before depth");
+        app.tool.setView(true);
+        waitFor(()->app.tool.depth.latest==null&&!app.tool.connecting,"Switch back did not close depth");
+        if(app.tool.mapping!=saved)throw new AssertionError("Switching streams erased calibration");
+        System.out.println("PASS: native fixture depth-only capture, color pause, depth shutdown on Color selection and preserved calibration.");
+      }
       System.out.println("PASS: guided camera/preview/projector/targets/verify/depth/completion flow; incomplete-step guards, Undo, Back, fit, probe, save, measurement, skip, resize and projector rendering.");
     } catch(Throwable error){error.printStackTrace();result=1;} finally {if(app.tool!=null)app.tool.close();System.exit(result);}
   }

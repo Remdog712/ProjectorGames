@@ -16,6 +16,8 @@ There is **no closest-to-camera setting**, automatic pose calibration, skeleton 
 5. Choose **Runtime folder** and select the folder containing your working **x64 OpenNI2.dll**. Keep its driver subfolders intact. The tool imports the old `.local/camera.json` connection preferences on first launch when available.
 6. Choose your **Color #** (often 0 or 1), select Auto / DirectShow / Media Foundation, then **Connect**. Close Windows Camera before connecting.
 
+**Only the selected camera stream runs.** Choosing Depth closes UVC color before opening OpenNI depth; choosing Color closes depth first. Switching previews can take a moment. This avoids simultaneous capture competing for the Astra USB connection.
+
 The actual application is Java: OpenNI2 depth is accessed directly through JNA, and UVC color through OpenCV Java. Python is not used during capture, calibration or measurement. Keep the existing trusted Orbbec drivers/runtime; do not download an isolated DLL from third-party sites.
 
 **Start ProjectorGames.cmd now verifies the Java dependencies and opens the Processing sketch**, rather than starting the old browser server. If `.pde` files are not associated with Processing, open the file using Processing's File → Open menu. Press Run in the IDE.

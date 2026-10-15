@@ -10,6 +10,9 @@ import org.opencv.videoio.Videoio;
 public final class Calibrator {
   final PApplet p;
   int step=0;
+  final Object cameraSwitchLock=new Object();
+  volatile int cameraRequest=0;
+  boolean cameraEnabled=false;
   final String[] steps={"Connect camera","Check preview","Place projector","Click targets","Verify mapping","Measure surface","Setup complete"};
   boolean probeChecked=false;
   String guidance(){switch(step){
@@ -50,7 +53,7 @@ public final class Calibrator {
     p.fill(0xff9cb1c8);p.textAlign(PApplet.LEFT,PApplet.TOP);p.textSize(13);p.text(guidance(),20,96,890,62);
   }
   void stepControl(int x){
-    if(step==0){if(x<140)chooseRuntime();else if(x<240)connect();else if(x<345){String value=JOptionPane.showInputDialog("Color camera number (usually 0 or 1):",colorIndex);if(value!=null)try{int n=Integer.parseInt(value);if(n<0||n>20)throw new NumberFormatException();colorIndex=n;reset();saveSettings();}catch(NumberFormatException e){message="Choose a number from 0 to 20.";}}else if(x<495){backend=backend==0?Videoio.CAP_DSHOW:backend==Videoio.CAP_DSHOW?Videoio.CAP_MSMF:0;reset();saveSettings();}else if(x<595){demo=!demo;reset();setView(true);invalidateImage();}return;}
+    if(step==0){if(x<140)chooseRuntime();else if(x<240)connect();else if(x<345){String value=JOptionPane.showInputDialog("Color camera number (usually 0 or 1):",colorIndex);if(value!=null)try{int n=Integer.parseInt(value);if(n<0||n>20)throw new NumberFormatException();colorIndex=n;reset();saveSettings();}catch(NumberFormatException e){message="Choose a number from 0 to 20.";}}else if(x<495){backend=backend==0?Videoio.CAP_DSHOW:backend==Videoio.CAP_DSHOW?Videoio.CAP_MSMF:0;reset();saveSettings();}else if(x<595){demo=!demo;reset();setView(true);invalidateImage();if(cameraEnabled)switchCamera();}return;}
     if(step==1||step>=5){if(x>=330&&x<470&&!colorView){retryDepth();return;}if(x<110)setView(true);else if(x<210)setView(false);else if(step==1&&x<310){if(colorView)mirrorColor=!mirrorColor;else mirrorDepth=!mirrorDepth;reset();invalidateImage();saveSettings();}return;}
     if(step==2){if(x<140){display=display%GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices().length+1;}else if(x<270)openProjector();else if(x<400){grid=grid==5?3:grid+1;reset();saveSettings();}return;}
     if(step==3){if(x<140)undoPoint();else if(x<270){if(!frozen){Frames frame=demo?demoFrame():color.latest;if(frame==null||(!demo&&!frame.fresh())){message="No fresh color frame to freeze.";return;}frozenFrame=frame;}frozen=!frozen;invalidateImage();}return;}
@@ -107,7 +110,7 @@ public final class Calibrator {
         for(int i=0;i<clicks.size();i++){double[] pt=clicks.get(i);p.stroke(ACCENT);p.fill(0xff10211b);p.ellipse(imageX+(float)pt[0]*imageW,imageY+(float)pt[1]*imageH,22,22);p.noStroke();p.fill(INK);p.textAlign(PApplet.CENTER,PApplet.CENTER);p.text(i+1,imageX+(float)pt[0]*imageW,imageY+(float)pt[1]*imageH);}
       }
       if(!colorView&&measureX>=0&&displayFrame!=null){float x=imageX+(measureX+.5f)/displayFrame.width*imageW,y=imageY+(measureY+.5f)/displayFrame.height*imageH;p.stroke(ACCENT);p.line(x-10,y,x+10,y);p.line(x,y-10,x,y+10);p.noStroke();}
-    }else{displayFrame=null;p.fill(0xff90a5bf);p.textAlign(PApplet.CENTER,PApplet.CENTER);p.textSize(16);p.text("No fresh "+(colorView?"color":"depth")+" frame",470,400);p.textAlign(PApplet.LEFT,PApplet.TOP);p.textSize(15);p.text(colorView?color.status:depth.status,65,450,810,230);if(!colorView)p.text("Runtime: "+(runtime.isEmpty()?"not selected — go Back to Connect camera and choose the OpenNI2.dll folder":runtime)+"\n\nClose other depth viewers, then click Retry depth. Color can stay connected.",65,690,810,130);}
+    }else{displayFrame=null;p.fill(0xff90a5bf);p.textAlign(PApplet.CENTER,PApplet.CENTER);p.textSize(16);p.text("No fresh "+(colorView?"color":"depth")+" frame",470,400);p.textAlign(PApplet.LEFT,PApplet.TOP);p.textSize(15);p.text(colorView?color.status:depth.status,65,450,810,230);if(!colorView)p.text("Runtime: "+(runtime.isEmpty()?"not selected — go Back to Connect camera and choose the OpenNI2.dll folder":runtime)+"\n\nColor capture is paused while Depth is selected. Close other depth viewers, then click Retry depth.",65,690,810,130);}
     p.fill(PANEL);p.rect(940,165,280,675,8);p.fill(ACCENT);p.textAlign(PApplet.LEFT,PApplet.TOP);p.textSize(16);p.text(steps[step],958,185);
     p.fill(INK);p.textSize(13);p.text("Points: "+clicks.size()+" / "+(grid*grid),958,220);
     p.text(guidance(),958,252,242,155);
@@ -142,16 +145,32 @@ public final class Calibrator {
     }else if(!colorView){measureX=Math.min(displayFrame.width-1,(int)(u*displayFrame.width));measureY=Math.min(displayFrame.height-1,(int)(v*displayFrame.height));measurement=displayFrame.sample(measureX,measureY);message=Float.isNaN(measurement)?"No reliable depth here. Click a nearby solid point.":"Sample at pixel ("+measureX+", "+measureY+").";}
     else if(mapping!=null&&mapSpace.equals("COLOR")&&displayFrame.width==mapWidth&&displayFrame.height==mapHeight){probe=mapping.apply(u,v);probeChecked=true;openProjector();message="Mapped crosshair sent to projector.";}
   }
-  void setView(boolean value){if(colorView!=value){if(calibrating)calibrating=false;colorView=value;frozen=false;testing=false;invalidateImage();}}
+  void setView(boolean value){if(colorView!=value){if(calibrating)calibrating=false;colorView=value;frozen=false;testing=false;invalidateImage();if(cameraEnabled&&!demo)switchCamera();}}
   void invalidateImage(){image=null;displayFrame=null;lastSequence=-1;}
   void reset(){clicks.clear();selected=0;mapping=null;probe=null;measurement=Float.NaN;measureX=measureY=-1;calibrating=false;testing=false;message="Points reset. Start Calibrate to select a new grid.";}
   void fit(){if(!ready){message="Image library not ready.";return;}try{if(clicks.size()!=grid*grid)throw new IllegalArgumentException("Select all "+grid*grid+" points.");mapping=Mapping.fit(clicks,Mapping.grid(grid));int w=projector==null?1024:projector.width,h=projector==null?768:projector.height;message=String.format(java.util.Locale.ROOT,"Fit RMS: %.2f projector pixels. Click Save to keep it.",mapping.rms(clicks,Mapping.grid(grid),w,h));}catch(Exception e){message=e.getMessage();}}
   void chooseRuntime(){JFileChooser chooser=new JFileChooser(runtime.isEmpty()?System.getProperty("user.home"):runtime);chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);chooser.setDialogTitle("Choose folder containing OpenNI2.dll");if(chooser.showOpenDialog(null)==JFileChooser.APPROVE_OPTION){runtime=chooser.getSelectedFile().getAbsolutePath();reset();saveSettings();message="Runtime selected: "+runtime+". Click Connect.";}}
-  void connect(){if(!ready||connecting)return;connecting=true;frozen=false;invalidateImage();new Thread(()->{try{depth.stop();color.stop();depth.start(runtime);color.start(colorIndex,backend);demo=false;saveSettings();message="Opening independent depth and color streams.";}catch(Throwable e){message=e.getMessage();}finally{connecting=false;}},"Connect cameras").start();}
-  void retryDepth(){
-    if(!ready||connecting)return;
-    connecting=true;frozen=false;invalidateImage();
-    new Thread(()->{try{depth.stop();depth.start(runtime);message="Retrying only the OpenNI depth camera. Color and calibration are preserved.";}catch(Throwable e){message="Depth retry failed: "+e.getMessage();}finally{connecting=false;}},"Retry depth").start();
+  void connect(){if(!ready||connecting)return;cameraEnabled=true;demo=false;frozen=false;invalidateImage();saveSettings();switchCamera();}
+  void retryDepth(){if(!ready||connecting)return;cameraEnabled=true;demo=false;setView(false);frozen=false;invalidateImage();switchCamera();}
+  /** Serialize stop/start operations: Astra RGB and depth never capture together. */
+  void switchCamera(){
+    final int request=++cameraRequest;
+    final boolean wantColor=colorView,wantDemo=demo;
+    final String folder=runtime;
+    final int index=colorIndex,api=backend;
+    connecting=true;
+    new Thread(()->{
+      synchronized(cameraSwitchLock){
+        try{
+          if(request!=cameraRequest)return;
+          color.stop();depth.stop();
+          if(request!=cameraRequest)return;
+          if(!wantDemo){if(wantColor)color.start(index,api);else depth.start(folder);}
+          message=wantDemo?"Demo selected; cameras paused.":wantColor?"Color active; depth paused. Select Depth to switch streams.":"Depth active; color paused. Waiting for depth frames.";
+        }catch(Throwable e){message="Camera switch failed: "+e.getMessage();System.err.println(message);}
+        finally{if(request==cameraRequest)connecting=false;}
+      }
+    },"Switch camera stream").start();
   }
   void openProjector(){if(projector!=null&&projector.screen==display){projector.getSurface().setVisible(true);projector.loop();return;}if(projector!=null){projector.noLoop();projector.getSurface().setVisible(false);}projector=new ProjectorView(this,display);PApplet.runSketch(new String[]{"Projector grid"},projector);}
   JSONObject settings(){JSONObject j=new JSONObject();j.setString("runtime",runtime);j.setInt("color_index",colorIndex);j.setInt("backend",backend);j.setBoolean("mirror_color",mirrorColor);j.setBoolean("mirror_depth",mirrorDepth);j.setInt("grid",grid);return j;}
@@ -161,5 +180,5 @@ public final class Calibrator {
   void loadCalibration(){try{Path file=data.resolve("calibration.json");if(!Files.exists(file))return;JSONObject j=p.loadJSONObject(file.toString());if(j.getInt("color_index",colorIndex)!=colorIndex||j.getInt("backend",backend)!=backend||!j.getString("runtime",runtime).equals(runtime))throw new IllegalArgumentException("Saved camera settings differ. Select the matching camera/runtime or recalibrate.");JSONArray a=j.getJSONArray("homography");double[] values=new double[9];for(int i=0;i<9;i++)values[i]=a.getDouble(i);Mapping restored=new Mapping(values);JSONArray pts=j.getJSONArray("points");int g=j.getInt("grid");if(g<3||g>5||pts.size()!=g*g)throw new IllegalArgumentException("Invalid point count.");clicks.clear();for(int i=0;i<pts.size();i++){JSONArray pt=pts.getJSONArray(i);clicks.add(new double[]{pt.getDouble(0),pt.getDouble(1)});}grid=g;mapSpace=j.getString("space");mapWidth=j.getInt("width");mapHeight=j.getInt("height");mirrorColor=j.getBoolean("mirror_color",false);mirrorDepth=j.getBoolean("mirror_depth",false);mapping=restored;selected=clicks.size();calibrating=false;invalidateImage();message="Saved "+clicks.size()+"-point "+mapSpace.toLowerCase()+" mapping loaded.";}catch(Exception e){message="Cannot load calibration: "+e.getMessage();}}
   public void keyPressed(char key,int code){if(step==3&&(key=='z'||key=='Z'))undoPoint();}
 
-  public void close(){try{depth.stop();}catch(Exception ignored){}try{color.stop();}catch(Exception ignored){}}
+  public void close(){cameraRequest++;cameraEnabled=false;synchronized(cameraSwitchLock){try{depth.stop();}catch(Exception ignored){}try{color.stop();}catch(Exception ignored){}}}
 }
