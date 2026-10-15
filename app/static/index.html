@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ProjectorGames</title><link rel="stylesheet" href="/static/style.css"></head>
+<body><header><span class="brand">◉ ProjectorGames</span><span id="status">Connecting…</span></header>
+<main><aside><p class="eyebrow">PLAY SPACE</p><h1>Make any surface playful.</h1><p>Calibrate your projector, choose a game, and bring the room to life.</p>
+<label>Game<select id="game"><option value="rings">Contact rings · first test</option><option value="bubbles">Bubble garden · bonus demo</option></select></label>
+<label>Ring color<input id="color" type="color" value="#62ffe0"></label><label>Ring radius<input id="radius" type="range" min="15" max="100" value="40"></label>
+<label class="check"><input id="simulate" type="checkbox" checked> Mouse / touch simulation</label>
+<button id="project">Open projector window ↗</button><button id="fullscreen">Fullscreen this view</button>
+<p class="hint">Move the pointer over the play area to test rings. On a touch screen, use multiple fingers. Press Esc to leave fullscreen.</p>
+<details open><summary>Surface setup</summary><ol><li>Mount the camera so it sees the whole projected area. Keep the camera and projector fixed.</li><li>Open the projector window on the second display, make it fullscreen, and enable corner targets.</li><li>In the depth image below, click those targets in order: top-left, top-right, bottom-right, bottom-left.</li><li>Save mapping. Clear the surface, then capture its depth.</li></ol>
+<label class="check"><input id="targets" type="checkbox"> Show corner targets</label>
+<div id="preview"><img id="depth" alt="Depth camera preview"><span id="noCamera">Depth preview requires a connected camera.</span><div id="markers"></div></div>
+<p id="corners">0 / 4 corners selected</p><button id="reset">Reset corners</button>
+<div class="grid"><label>Near (mm)<input id="near" type="number" min="1" max="500" value="15"></label><label>Far (mm)<input id="far" type="number" min="2" max="1000" value="100"></label></div>
+<label>Minimum blob area (camera pixels)<input id="area" type="number" min="10" max="100000" value="100"></label>
+<button id="save">Save mapping</button><button id="capture">Capture empty surface</button><p class="hint">Start at 15–100 mm in front of the surface. Rings show nearby objects, not confirmed physical touch. Recapture after moving equipment or changing surfaces.</p>
+</details><p id="notice" role="status"></p></aside>
+<section class="stage-wrap"><div class="stage-title"><span>LIVE PLAY AREA</span><span id="mode">SIMULATION</span></div><canvas id="stage"></canvas><p class="hint">The separate projector window shows only the game. Settings update across both windows.</p></section></main><script src="/static/app.js"></script></body></html>
