@@ -2,11 +2,12 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Literal
 import json
+import hashlib
 import os
 import cv2
 import numpy as np
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from .camera import Camera
@@ -111,9 +112,21 @@ app = FastAPI(lifespan=lifespan)
 app.mount('/static', StaticFiles(directory=ROOT / 'static'), name='static')
 
 
+@app.middleware('http')
+async def fresh_local_ui(request, call_next):
+    response = await call_next(request)
+    # Updates are installed in place; never reuse UI or hardware status from an older run.
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
 @app.get('/')
 def index():
-    return FileResponse(ROOT / 'static/index.html')
+    page = (ROOT / 'static/index.html').read_text(encoding='utf-8')
+    for filename in ('app.js', 'style.css'):
+        version = hashlib.sha256((ROOT / 'static' / filename).read_bytes()).hexdigest()[:12]
+        page = page.replace('/static/' + filename, '/static/' + filename + '?v=' + version)
+    return HTMLResponse(page)
 
 
 @app.get('/api/status')

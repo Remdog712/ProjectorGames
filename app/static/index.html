@@ -64,5 +64,26 @@
 </div>
 <div class="panel game-panel"><div class="panel-heading"><h2>Live game</h2><span id="readiness">BODY INPUT</span></div><canvas id="stage"></canvas><p class="hint">Rings follow depth regions, not your mouse. Green regions and body points should change as you move. A new empty-surface capture is needed after each app restart.</p></div>
 </section>
-</main><script src="/static/app.js"></script>
+</main>
+<script>
+// Kept independent of app.js so a stale, missing, or broken bundle reports an error.
+window.projectorAppStarted = false;
+function showStartupError(message) {
+  document.getElementById('status').textContent = 'App startup error: ' + message;
+  document.getElementById('notice').textContent = 'Press Ctrl+F5. If this remains, copy the startup error above for troubleshooting.';
+}
+window.addEventListener('error', function (event) {
+  if (event.target instanceof HTMLScriptElement) showStartupError('Could not load the app script.');
+  else if (event.message) showStartupError(event.message);
+}, true);
+window.addEventListener('unhandledrejection', function (event) {
+  showStartupError(String(event.reason && event.reason.message || event.reason));
+});
+setTimeout(function () {
+  if (!window.projectorAppStarted && !document.getElementById('status').textContent.startsWith('App startup error:')) {
+    showStartupError('Startup did not complete. Refresh and check that the server is running.');
+  }
+}, 8000);
+</script>
+<script src="/static/app.js"></script>
 </body></html>

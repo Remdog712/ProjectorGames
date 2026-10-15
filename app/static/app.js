@@ -312,3 +312,5 @@ function draw() {
   requestAnimationFrame(draw);
 }
 requestAnimationFrame(draw);
+
+window.projectorAppStarted = true;
