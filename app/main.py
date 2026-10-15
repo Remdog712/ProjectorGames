@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from typing import Literal
 import json
 import hashlib
+import uuid
 import os
 import cv2
 import numpy as np
@@ -102,6 +103,7 @@ def distance_ready(depth=None):
 
 
 def reset_geometry(clear_distance=False):
+    if globals().get('studio') and studio.surface_info is not None:studio.invalidate()
     state['matrix'] = state['alignment'] = None
     settings.update(points=[], depth_points=[], color_points=[])
     save_json('calibration.json', settings)
@@ -112,9 +114,12 @@ def reset_geometry(clear_distance=False):
 
 def save_json(name, data):
     DATA.mkdir(parents=True, exist_ok=True)
-    tmp = DATA / (name + '.tmp')
-    tmp.write_text(json.dumps(data))
-    tmp.replace(DATA / name)
+    tmp = DATA / (name + '.' + uuid.uuid4().hex + '.tmp')
+    try:
+        tmp.write_text(json.dumps(data))
+        tmp.replace(DATA / name)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def alignment_matrix(depth_points, color_points):
@@ -171,7 +176,9 @@ async def lifespan(app):
         camera_settings['runtime'] = discover_runtime()
     if camera_settings['enabled']:
         camera.start(camera_settings['runtime'], camera_settings['color_index'], camera_settings['color_backend'])
+    studio.start()
     yield
+    studio.stop()
     capture.cancel()
     try:
         camera.stop()
@@ -193,8 +200,8 @@ async def fresh_local_ui(request, call_next):
 
 @app.get('/')
 def index():
-    page = (ROOT / 'static/index.html').read_text(encoding='utf-8')
-    for filename in ('app.js', 'style.css'):
+    page = (ROOT / 'static/studio.html').read_text(encoding='utf-8')
+    for filename in ('studio.js', 'studio.css', 'renderer.js'):
         version = hashlib.sha256((ROOT / 'static' / filename).read_bytes()).hexdigest()[:12]
         page = page.replace('/static/' + filename, '/static/' + filename + '?v=' + version)
     return HTMLResponse(page)
@@ -241,6 +248,7 @@ def retry_color(config: ColorSettings):
         raise HTTPException(409, str(exc))
     capture.cancel()
     if config.color_index != camera_settings['color_index'] or config.color_backend != camera_settings['color_backend']:
+        if studio.surface_info is not None:studio.invalidate()
         state['matrix'] = state['alignment'] = None
         settings.update(points=[], depth_points=[], color_points=[])
         save_json('calibration.json', settings)
@@ -430,3 +438,8 @@ def set_distance_options(config: DistanceOptions):
     distance_settings.update(margin_mm=config.margin_mm)
     save_json('distance.json',distance_settings)
     return {'ok':True,'distance':{**distance_settings,'ready':distance_ready()}}
+
+
+from .studio import Studio
+studio = Studio()
+studio.attach(app)

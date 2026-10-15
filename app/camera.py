@@ -149,8 +149,28 @@ class Camera:
             color = self.color.copy() if self.color is not None and now-self.color_time < 2 else None
             return depth, color
 
+    def depth_ref(self):
+        # Camera workers replace arrays and never mutate published frames.
+        with self.lock:
+            return self.depth if self.depth is not None and time.monotonic()-self.depth_time<.5 else None
+
+    def color_ref(self):
+        with self.lock:
+            return self.color if self.color is not None and time.monotonic()-self.color_time<.5 else None
+
+    def metadata(self):
+        with self.lock:
+            now=time.monotonic()
+            depth_ok=self.depth is not None and now-self.depth_time<.5
+            color_ok=self.color is not None and now-self.color_time<.5
+            return {'depth_size':[self.depth.shape[1],self.depth.shape[0]] if depth_ok else None,
+                    'color_size':[self.color.shape[1],self.color.shape[0]] if color_ok else None,
+                    'color_backend':self.color_backend}
+
     def snapshot(self):
-        return self.pair()[0]
+        value=self.depth_ref()
+        return None if value is None else value.copy()
 
     def color_snapshot(self):
-        return self.pair()[1]
+        value=self.color_ref()
+        return None if value is None else value.copy()

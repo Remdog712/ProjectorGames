@@ -4,3 +4,4 @@ numpy==2.2.5
 opencv-python-headless==4.11.0.86
 
 openni==2.3.0
+websockets==15.0.1
