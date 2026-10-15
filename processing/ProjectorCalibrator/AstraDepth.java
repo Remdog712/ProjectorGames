@@ -58,10 +58,10 @@ public final class AstraDepth {
       check(api,api.oniInitialize(2002),"Initialize");initialized=true;
       PointerByReference out=new PointerByReference();check(api,api.oniDeviceOpen(null,out),"Open camera");device=out.getValue();
       check(api,api.oniDeviceCreateStream(device,2,out),"Create depth stream");stream=out.getValue();check(api,api.oniStreamStart(stream),"Start depth");
-      int sequence=0;status="Depth connected.";
+      int sequence=0;long lastFrame=System.currentTimeMillis();status="Depth stream started; waiting for frames...";
       while(running){
         int ready=api.oniWaitForAnyStream(new Pointer[]{stream},1,new IntByReference(),200);
-        if(ready==102)continue;check(api,ready,"Wait for depth");
+        if(ready==102){if(System.currentTimeMillis()-lastFrame>5000)status="Depth stream opened but no frames arrived for 5 seconds. Close other depth viewers and retry; check the camera USB connection.";continue;}check(api,ready,"Wait for depth");
         PointerByReference framePointer=new PointerByReference();check(api,api.oniStreamReadFrame(stream,framePointer),"Read depth");
         try {
           Frame frame=new Frame(framePointer.getValue());
@@ -73,7 +73,7 @@ public final class AstraDepth {
           for(int y=0;y<frame.height;y++)for(int x=0;x<frame.width;x++){
             int i=y*frame.width+x;float z=(bytes.getShort(y*frame.stride+x*2)&0xffff)*scale;depth[i]=z;colors[i]=Frames.heat(z);
           }
-          latest=new Frames(frame.width,frame.height,colors,depth,++sequence);
+          latest=new Frames(frame.width,frame.height,colors,depth,++sequence);lastFrame=System.currentTimeMillis();status="Depth connected: "+frame.width+" x "+frame.height+".";
         } finally {api.oniFrameRelease(framePointer.getValue());}
       }
     } catch(Throwable e){status="Depth: "+e.getClass().getSimpleName()+": "+e.getMessage();System.err.println(status);}

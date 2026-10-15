@@ -43,6 +43,7 @@ public final class Calibrator {
     if(step==0){button("Runtime folder",20,50,120,false);button(connecting?"Connecting...":"Connect",150,50,90,false);button("Color #"+colorIndex,250,50,95,false);button(backend==0?"Backend: AUTO":backend==Videoio.CAP_DSHOW?"DirectShow":"Media Foundation",355,50,140,false);button(demo?"Demo ON":"Demo",505,50,90,demo);}
     if(step==1||step>=5){button("Color",20,50,90,colorView);button("Depth",120,50,90,!colorView);}
     if(step==1){button("Mirror",220,50,90,colorView?mirrorColor:mirrorDepth);}
+    if((step==1||step>=5)&&!colorView)button(connecting?"Retrying...":"Retry depth",330,50,140,false);
     if(step==2){button("Display "+display,20,50,120,false);button("Show grid",150,50,120,false);button(grid+" x "+grid+" points",280,50,120,false);}
     if(step==3){button("Undo point",20,50,120,false);button(frozen?"Resume":"Freeze",150,50,120,frozen);}
     if(step==4){button("Show projector",20,50,150,false);}
@@ -50,7 +51,7 @@ public final class Calibrator {
   }
   void stepControl(int x){
     if(step==0){if(x<140)chooseRuntime();else if(x<240)connect();else if(x<345){String value=JOptionPane.showInputDialog("Color camera number (usually 0 or 1):",colorIndex);if(value!=null)try{int n=Integer.parseInt(value);if(n<0||n>20)throw new NumberFormatException();colorIndex=n;reset();saveSettings();}catch(NumberFormatException e){message="Choose a number from 0 to 20.";}}else if(x<495){backend=backend==0?Videoio.CAP_DSHOW:backend==Videoio.CAP_DSHOW?Videoio.CAP_MSMF:0;reset();saveSettings();}else if(x<595){demo=!demo;reset();setView(true);invalidateImage();}return;}
-    if(step==1||step>=5){if(x<110)setView(true);else if(x<210)setView(false);else if(step==1&&x<310){if(colorView)mirrorColor=!mirrorColor;else mirrorDepth=!mirrorDepth;reset();invalidateImage();saveSettings();}return;}
+    if(step==1||step>=5){if(x>=330&&x<470&&!colorView){retryDepth();return;}if(x<110)setView(true);else if(x<210)setView(false);else if(step==1&&x<310){if(colorView)mirrorColor=!mirrorColor;else mirrorDepth=!mirrorDepth;reset();invalidateImage();saveSettings();}return;}
     if(step==2){if(x<140){display=display%GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices().length+1;}else if(x<270)openProjector();else if(x<400){grid=grid==5?3:grid+1;reset();saveSettings();}return;}
     if(step==3){if(x<140)undoPoint();else if(x<270){if(!frozen){Frames frame=demo?demoFrame():color.latest;if(frame==null||(!demo&&!frame.fresh())){message="No fresh color frame to freeze.";return;}frozenFrame=frame;}frozen=!frozen;invalidateImage();}return;}
     if(step==4&&x<170)openProjector();
@@ -106,7 +107,7 @@ public final class Calibrator {
         for(int i=0;i<clicks.size();i++){double[] pt=clicks.get(i);p.stroke(ACCENT);p.fill(0xff10211b);p.ellipse(imageX+(float)pt[0]*imageW,imageY+(float)pt[1]*imageH,22,22);p.noStroke();p.fill(INK);p.textAlign(PApplet.CENTER,PApplet.CENTER);p.text(i+1,imageX+(float)pt[0]*imageW,imageY+(float)pt[1]*imageH);}
       }
       if(!colorView&&measureX>=0&&displayFrame!=null){float x=imageX+(measureX+.5f)/displayFrame.width*imageW,y=imageY+(measureY+.5f)/displayFrame.height*imageH;p.stroke(ACCENT);p.line(x-10,y,x+10,y);p.line(x,y-10,x,y+10);p.noStroke();}
-    }else{displayFrame=null;p.fill(0xff90a5bf);p.textAlign(PApplet.CENTER,PApplet.CENTER);p.textSize(16);p.text("No fresh "+(colorView?"color":"depth")+" frame",470,490);}
+    }else{displayFrame=null;p.fill(0xff90a5bf);p.textAlign(PApplet.CENTER,PApplet.CENTER);p.textSize(16);p.text("No fresh "+(colorView?"color":"depth")+" frame",470,400);p.textAlign(PApplet.LEFT,PApplet.TOP);p.textSize(15);p.text(colorView?color.status:depth.status,65,450,810,230);if(!colorView)p.text("Runtime: "+(runtime.isEmpty()?"not selected — go Back to Connect camera and choose the OpenNI2.dll folder":runtime)+"\n\nClose other depth viewers, then click Retry depth. Color can stay connected.",65,690,810,130);}
     p.fill(PANEL);p.rect(940,165,280,675,8);p.fill(ACCENT);p.textAlign(PApplet.LEFT,PApplet.TOP);p.textSize(16);p.text(steps[step],958,185);
     p.fill(INK);p.textSize(13);p.text("Points: "+clicks.size()+" / "+(grid*grid),958,220);
     p.text(guidance(),958,252,242,155);
@@ -147,6 +148,11 @@ public final class Calibrator {
   void fit(){if(!ready){message="Image library not ready.";return;}try{if(clicks.size()!=grid*grid)throw new IllegalArgumentException("Select all "+grid*grid+" points.");mapping=Mapping.fit(clicks,Mapping.grid(grid));int w=projector==null?1024:projector.width,h=projector==null?768:projector.height;message=String.format(java.util.Locale.ROOT,"Fit RMS: %.2f projector pixels. Click Save to keep it.",mapping.rms(clicks,Mapping.grid(grid),w,h));}catch(Exception e){message=e.getMessage();}}
   void chooseRuntime(){JFileChooser chooser=new JFileChooser(runtime.isEmpty()?System.getProperty("user.home"):runtime);chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);chooser.setDialogTitle("Choose folder containing OpenNI2.dll");if(chooser.showOpenDialog(null)==JFileChooser.APPROVE_OPTION){runtime=chooser.getSelectedFile().getAbsolutePath();reset();saveSettings();message="Runtime selected: "+runtime+". Click Connect.";}}
   void connect(){if(!ready||connecting)return;connecting=true;frozen=false;invalidateImage();new Thread(()->{try{depth.stop();color.stop();depth.start(runtime);color.start(colorIndex,backend);demo=false;saveSettings();message="Opening independent depth and color streams.";}catch(Throwable e){message=e.getMessage();}finally{connecting=false;}},"Connect cameras").start();}
+  void retryDepth(){
+    if(!ready||connecting)return;
+    connecting=true;frozen=false;invalidateImage();
+    new Thread(()->{try{depth.stop();depth.start(runtime);message="Retrying only the OpenNI depth camera. Color and calibration are preserved.";}catch(Throwable e){message="Depth retry failed: "+e.getMessage();}finally{connecting=false;}},"Retry depth").start();
+  }
   void openProjector(){if(projector!=null&&projector.screen==display){projector.getSurface().setVisible(true);projector.loop();return;}if(projector!=null){projector.noLoop();projector.getSurface().setVisible(false);}projector=new ProjectorView(this,display);PApplet.runSketch(new String[]{"Projector grid"},projector);}
   JSONObject settings(){JSONObject j=new JSONObject();j.setString("runtime",runtime);j.setInt("color_index",colorIndex);j.setInt("backend",backend);j.setBoolean("mirror_color",mirrorColor);j.setBoolean("mirror_depth",mirrorDepth);j.setInt("grid",grid);return j;}
   void saveSettings(){try{Files.createDirectories(data);p.saveJSONObject(settings(),data.resolve("settings.json").toString());}catch(Exception e){message="Cannot save settings: "+e.getMessage();}}
