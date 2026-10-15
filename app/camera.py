@@ -1,7 +1,7 @@
 """Optional legacy OpenNI2 depth adapter. Vendor runtime is installed separately."""
 import os
 import threading
-import time
+import cv2
 import numpy as np
 
 
@@ -9,6 +9,8 @@ class Camera:
     def __init__(self):
         self.lock = threading.Lock()
         self.depth = None
+        self.color = None
+        self.color_error = 'Color camera not started.'
         self.error = 'Simulation mode; camera not started.'
         self.running = False
         self.thread = None
@@ -19,6 +21,7 @@ class Camera:
         self.running = True
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
+        threading.Thread(target=self._run_color, daemon=True).start()
 
     def _run(self):
         stream = None
@@ -53,3 +56,29 @@ class Camera:
     def snapshot(self):
         with self.lock:
             return None if self.depth is None else self.depth.copy()
+
+    def _run_color(self):
+        capture = None
+        try:
+            index = int(os.getenv('PROJECTORGAMES_COLOR_INDEX', '0'))
+            capture = cv2.VideoCapture(index, cv2.CAP_DSHOW) if os.name == 'nt' else cv2.VideoCapture(index)
+            if not capture.isOpened():
+                raise RuntimeError(f'Cannot open color camera index {index}. Try another PROJECTORGAMES_COLOR_INDEX.')
+            while self.running:
+                ok, frame = capture.read()
+                if not ok:
+                    raise RuntimeError('Color camera stopped providing frames. Close other camera apps and restart.')
+                with self.lock:
+                    self.color = frame.copy()
+                self.color_error = ''
+        except Exception as exc:
+            self.color_error = f'Color camera unavailable: {exc}'
+        finally:
+            with self.lock:
+                self.color = None
+            if capture is not None:
+                capture.release()
+
+    def color_snapshot(self):
+        with self.lock:
+            return None if self.color is None else self.color.copy()

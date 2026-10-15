@@ -7,10 +7,15 @@
 <label class="check"><input id="simulate" type="checkbox" checked> Mouse / touch simulation</label>
 <button id="project">Open projector window ↗</button><button id="fullscreen">Fullscreen this view</button>
 <p class="hint">Move the pointer over the play area to test rings. On a touch screen, use multiple fingers. Press Esc to leave fullscreen.</p>
-<details open><summary>Surface setup</summary><ol><li>Mount the camera so it sees the whole projected area. Keep the camera and projector fixed.</li><li>Open the projector window on the second display, make it fullscreen, and enable corner targets.</li><li>In the depth image below, click those targets in order: top-left, top-right, bottom-right, bottom-left.</li><li>Save mapping. Clear the surface, then capture its depth.</li></ol>
+<details open><summary>Surface setup</summary><ol><li>Mount the camera so it sees the whole projected area. Keep the camera and projector fixed.</li><li>Open the projector window on the second display, make it fullscreen, and enable corner targets.</li><li>In the color image below, click those targets in order: top-left, top-right, bottom-right, bottom-left.</li><li>Align color and depth using the guide below. Save mapping, clear the surface, then capture its depth.</li></ol>
 <label class="check"><input id="targets" type="checkbox"> Show corner targets</label>
-<div id="preview"><img id="depth" alt="Depth camera preview"><span id="noCamera">Depth preview requires a connected camera.</span><div id="markers"></div></div>
+<p id="colorStatus" role="status"></p><div id="preview"><img id="depth" alt="Color camera preview for selecting projected corners"><span id="noCamera">Waiting for the color camera.</span><div id="markers"></div></div>
 <p id="corners">0 / 4 corners selected</p><button id="reset">Reset corners</button>
+<details><summary>Align depth to color (once per mounting)</summary>
+<p>The Astra Pro uses separate sensors. Place a hand close to the wall at four positions spread around the play area in clockwise order. At each position, freeze the images, click the same fingertip in color and depth, then resume before moving to the next position. Use the same visible physical point, not a projected mark. This approximates alignment at the wall plane.</p>
+<button id="align">Start / reset alignment pairs</button><button id="freeze">Freeze images</button><p id="alignStatus">No alignment pairs selected.</p>
+<div id="depthPreview" class="depth-preview"><img id="depthImage" alt="Depth image for color-depth alignment"><div id="depthMarkers"></div></div>
+<p class="hint">The upper image is color; this lower image is depth. Saved alignment must be verified at multiple locations. Re-pair after moving equipment or changing camera index.</p></details>
 <div class="grid"><label>Near (mm)<input id="near" type="number" min="1" max="500" value="15"></label><label>Far (mm)<input id="far" type="number" min="2" max="1000" value="100"></label></div>
 <label>Minimum blob area (camera pixels)<input id="area" type="number" min="10" max="100000" value="100"></label>
 <button id="save">Save mapping</button><button id="capture">Capture empty surface</button><p class="hint">Start at 15–100 mm in front of the surface. Rings show nearby objects, not confirmed physical touch. Recapture after moving equipment or changing surfaces.</p>

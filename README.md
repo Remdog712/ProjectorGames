@@ -65,3 +65,14 @@ Before installing a camera runtime, identify the device from the label on its un
 ```
 
 The path is an example, not an included driver. Device-specific runtime installation, USB access, camera streaming, and wall/floor contact accuracy must be verified on the Windows PC. The launch scripts have not been executed on Windows in the cloud environment.
+
+## Color calibration on the Astra Pro (Windows)
+
+The calibration preview now uses the **color image**, so projected wall targets are visible. The Astra Pro exposes RGB as a separate UVC camera: OpenCV opens camera index 0 by default. If that shows your laptop webcam, stop the server and set `$env:PROJECTORGAMES_COLOR_INDEX = "1"` in PowerShell, then restart. Try another index if necessary. Close Windows Camera and other camera viewers before starting. Color errors appear separately from depth errors.
+
+1. Show projector corner targets and click top-left, top-right, bottom-right, bottom-left in the **upper color image**.
+2. Expand **Align depth to color**. Because RGB and depth are different sensors, selecting RGB corners alone cannot accurately map depth contacts. Click **Start / reset alignment pairs**.
+3. Hold a hand near the wall at a position near the top-left of the play area. Freeze the images, then click the **same fingertip** in the upper color image and lower depth image. Resume, move to a position near top-right, and repeat for bottom-right and bottom-left. Spread the four points over the play area, forming a convex quadrilateral. You do not need to touch the exact projected corners for these alignment pairs.
+4. Save mapping, remove your hand, capture the empty wall, then disable simulation. Verify rings at several wall positions. Adjust/re-pair if there is an offset.
+
+This paired homography is an approximation for a flat interaction plane, not factory RGB/depth registration or full 3D calibration. Images are acquired independently; hold the hand still before freezing. Alignment degrades with distance from the plane. The app suppresses color-mapped contacts until alignment exists and frame resolutions match the saved calibration. Recalibrate after switching cameras, moving equipment, or changing resolutions. Previous depth-only mapping should be replaced using the color workflow. RGB/depth capture must still be verified on your Windows hardware; automated tests use synthetic frames.

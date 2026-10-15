@@ -14,8 +14,8 @@ from .tracking import homography, detect
 ROOT = Path(__file__).parent
 DATA = Path(os.getenv('PROJECTORGAMES_DATA', str(ROOT.parent / '.local')))
 camera = Camera()
-state = {'matrix': None, 'background': None}
-settings = {'points': [], 'near_mm': 15, 'far_mm': 100, 'min_area': 100}
+state = {'matrix': None, 'background': None, 'alignment': None}
+settings = {'points': [], 'near_mm': 15, 'far_mm': 100, 'min_area': 100, 'space': 'color', 'depth_points': [], 'color_points': [], 'color_size': None, 'depth_size': None}
 
 
 @asynccontextmanager
@@ -23,8 +23,11 @@ async def lifespan(app):
     DATA.mkdir(parents=True, exist_ok=True)
     try:
         saved = json.loads((DATA / 'calibration.json').read_text())
+        saved.setdefault('space', 'depth')
         config = Calibration(**saved)
         state['matrix'] = homography(config.points)
+        if config.space == 'color' and len(config.depth_points) == len(config.color_points) == 4:
+            state['alignment'] = alignment_matrix(config.depth_points, config.color_points)
         settings.update(config.model_dump())
     except (OSError, ValueError, TypeError):
         pass
@@ -39,6 +42,11 @@ app.mount('/static', StaticFiles(directory=ROOT / 'static'), name='static')
 
 
 class Calibration(BaseModel):
+    space: str = 'color'
+    depth_points: list[tuple[float, float]] = Field(default_factory=list, max_length=4)
+    color_points: list[tuple[float, float]] = Field(default_factory=list, max_length=4)
+    color_size: tuple[int, int] | None = None
+    depth_size: tuple[int, int] | None = None
     points: list[tuple[float, float]] = Field(min_length=4, max_length=4)
     near_mm: int = Field(default=15, ge=1, le=500)
     far_mm: int = Field(default=100, ge=2, le=1000)
@@ -53,8 +61,10 @@ def index():
 @app.get('/api/status')
 def status():
     depth = camera.snapshot()
+    color = camera.color_snapshot()
     return {'camera': camera.running and depth is not None, 'message': camera.error,
-            'calibrated': state['matrix'] is not None, 'background': state['background'] is not None,
+            'color_message': camera.color_error, 'color_size': None if color is None else [color.shape[1], color.shape[0]],
+            'aligned': state['alignment'] is not None, 'calibrated': state['matrix'] is not None, 'background': state['background'] is not None,
             'settings': settings, 'size': None if depth is None else [depth.shape[1], depth.shape[0]]}
 
 
@@ -62,8 +72,13 @@ def status():
 def calibrate(config: Calibration):
     if config.near_mm >= config.far_mm:
         raise HTTPException(400, 'Near distance must be smaller than far distance.')
+    if config.space not in ('depth', 'color'):
+        raise HTTPException(400, 'Unknown calibration coordinate space')
+    alignment = None
     try:
         matrix = homography(config.points)
+        if config.depth_points or config.color_points:
+            alignment = alignment_matrix(config.depth_points, config.color_points)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     DATA.mkdir(parents=True, exist_ok=True)
@@ -72,6 +87,7 @@ def calibrate(config: Calibration):
     tmp.replace(DATA / 'calibration.json')
     settings.update(config.model_dump())
     state['matrix'] = matrix
+    state['alignment'] = alignment
     return {'ok': True}
 
 
@@ -93,7 +109,17 @@ def contacts():
     if bg is not None and bg.shape != depth.shape:
         state['background'] = None
         return {'contacts': []}
-    return {'contacts': detect(depth, bg, state['matrix'], settings['near_mm'], settings['far_mm'], settings['min_area'])}
+    matrix = state['matrix']
+    if settings['space'] == 'color':
+        color = camera.color_snapshot()
+        if state['alignment'] is None or color is None:
+            return {'contacts': []}
+        if settings['color_size'] not in ([color.shape[1], color.shape[0]], (color.shape[1], color.shape[0])):
+            return {'contacts': []}
+        if settings['depth_size'] not in ([depth.shape[1], depth.shape[0]], (depth.shape[1], depth.shape[0])):
+            return {'contacts': []}
+        matrix = None if matrix is None else matrix @ state['alignment']
+    return {'contacts': detect(depth, bg, matrix, settings['near_mm'], settings['far_mm'], settings['min_area'])}
 
 
 @app.get('/api/depth.jpg')
@@ -105,4 +131,22 @@ def preview():
     ok, jpg = cv2.imencode('.jpg', frame)
     if not ok:
         raise HTTPException(500, 'Could not encode depth frame')
+    return Response(jpg.tobytes(), media_type='image/jpeg', headers={'Cache-Control': 'no-store'})
+
+
+def alignment_matrix(depth_points, color_points):
+    # Pair ordering must match and form a convex quad around the interaction area.
+    homography(depth_points)
+    homography(color_points)
+    return cv2.getPerspectiveTransform(np.float32(depth_points), np.float32(color_points))
+
+
+@app.get('/api/color.jpg')
+def color_preview():
+    frame = camera.color_snapshot()
+    if frame is None:
+        raise HTTPException(409, camera.color_error)
+    ok, jpg = cv2.imencode('.jpg', frame)
+    if not ok:
+        raise HTTPException(500, 'Could not encode color frame')
     return Response(jpg.tobytes(), media_type='image/jpeg', headers={'Cache-Control': 'no-store'})
