@@ -124,14 +124,19 @@ for (const kind of ['color', 'depth']) {
   };
 }
 action('connect', async () => {
-  const result = await api('camera', {enabled: true, runtime: $('runtime').value, color_index: Number($('cameraIndex').value)});
+  const result = await api('camera', {enabled: true, runtime: $('runtime').value, color_index: Number($('cameraIndex').value), color_backend: $('colorBackend').value});
   frozenId = null; handledCapture = null; contacts = [];
   settingsLoaded = false; // Reload server invalidation after a device change.
   notice(result.message + ' These settings will reconnect automatically next launch.');
   openStep('emptyStep');
 });
+action('retryColor', async () => {
+  const result = await api('camera/color', {color_index: Number($('cameraIndex').value), color_backend: $('colorBackend').value});
+  frozenId = null; handledCapture = null; settingsLoaded = false;
+  notice(result.message);
+});
 action('disconnect', async () => {
-  await api('camera', {enabled: false, runtime: $('runtime').value, color_index: Number($('cameraIndex').value)});
+  await api('camera', {enabled: false, runtime: $('runtime').value, color_index: Number($('cameraIndex').value), color_backend: $('colorBackend').value});
   frozenId = null; contacts = []; notice('Cameras disconnected.');
 });
 async function captureAfter(kind) {
@@ -185,6 +190,7 @@ function initializeForms(data) {
   if (!cameraFormLoaded) {
     $('runtime').value = data.camera_settings.runtime;
     $('cameraIndex').value = data.camera_settings.color_index;
+    $('colorBackend').value = data.camera_settings.color_backend || 'auto';
     cameraFormLoaded = true;
   }
   if (!settingsLoaded) {
@@ -197,7 +203,7 @@ function initializeForms(data) {
 }
 function updateStatus(data) {
   $('status').textContent = (data.camera ? 'Depth connected' : data.message) + ' · ' + (data.color_size ? 'Color connected' : data.color_message);
-  $('cameraStatus').textContent = 'Depth: ' + (data.camera ? 'ready' : data.message) + '\nColor: ' + (data.color_size ? 'ready' : data.color_message);
+  $('cameraStatus').textContent = 'Depth: ' + (data.camera ? 'ready' : data.message) + '\nColor: ' + (data.color_size ? 'ready · ' + data.color_backend + ' · camera ' + data.camera_settings.color_index : data.color_message);
   const c = data.capture;
   $('captureStatus').textContent = c.phase === 'countdown'
     ? `${c.kind === 'pose' ? 'Hold your star pose' : 'Clear the surface'} · ${c.remaining}s`

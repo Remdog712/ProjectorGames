@@ -71,7 +71,7 @@ class GuidedSetupTests(unittest.TestCase):
             main.state['matrix'] = np.eye(3)
             result = main.configure_camera(main.CameraSettings(runtime=self.temp.name, color_index=2))
             self.assertTrue(result['ok'])
-            camera.start.assert_called_once_with(self.temp.name, 2)
+            camera.start.assert_called_once_with(self.temp.name, 2, 'auto')
             self.assertTrue((Path(self.temp.name)/'camera.json').exists())
             self.assertIsNone(main.state['matrix'])
             self.assertIsNone(main.state['background'])
@@ -145,3 +145,60 @@ class CameraPollingTests(unittest.TestCase):
         stream.read_frame.assert_called_once()
         stream.stop.assert_called_once()
         device.close.assert_called_once()
+
+
+class ColorRecoveryTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+
+    def test_windows_fallback_releases_failed_capture_and_keeps_depth(self):
+        from types import SimpleNamespace
+        camera = Camera()
+        camera.depth = np.ones((2,2),np.float32)
+        failed, success = MagicMock(), MagicMock()
+        failed.isOpened.return_value = False
+        success.isOpened.return_value = True
+        frame = np.ones((2,2,3),np.uint8)
+        def read():
+            if success.read.call_count >= 2:
+                camera.color_stop_event.set()
+            return True, frame
+        success.read.side_effect = read
+        with patch('app.camera.os',SimpleNamespace(name='nt')), patch('app.camera.cv2.VideoCapture',side_effect=[failed,success]) as create:
+            camera._run_color(1,'auto')
+        self.assertEqual(create.call_args_list,[call(1,cv2.CAP_DSHOW),call(1,cv2.CAP_MSMF)])
+        failed.release.assert_called_once()
+        success.release.assert_called_once()
+        np.testing.assert_equal(camera.depth,np.ones((2,2),np.float32))
+        self.assertEqual(camera.color_backend,'Media Foundation')
+
+    def test_open_camera_without_frames_also_falls_back(self):
+        from types import SimpleNamespace
+        camera = Camera()
+        captures = [MagicMock(),MagicMock()]
+        for cap in captures:
+            cap.isOpened.return_value=True
+            cap.read.return_value=(False,None)
+        with patch('app.camera.os',SimpleNamespace(name='nt')), patch('app.camera.cv2.VideoCapture',side_effect=captures) as create:
+            camera._run_color(2,'auto')
+        self.assertEqual(create.call_count,2)
+        self.assertIn('DirectShow: opened but no frames',camera.color_error)
+        self.assertIn('Media Foundation: opened but no frames',camera.color_error)
+
+    def test_color_only_retry_preserves_depth_and_empty_surface(self):
+        bg=np.full((2,2),1000,np.float32)
+        old_state=main.state.copy()
+        old_settings=main.settings.copy()
+        old_camera=main.camera_settings.copy()
+        self.addCleanup(lambda:main.state.update(old_state))
+        self.addCleanup(lambda:main.settings.update(old_settings))
+        self.addCleanup(lambda:main.camera_settings.update(old_camera))
+        main.state['background']=bg
+        with patch.object(main,'DATA',Path(self.temp.name)), patch.object(main,'camera') as camera:
+            result=main.retry_color(main.ColorSettings(color_index=1,color_backend='msmf'))
+            camera.restart_color.assert_called_once_with(1,'msmf')
+            camera.stop.assert_not_called()
+            camera.start.assert_not_called()
+            self.assertIs(main.state['background'],bg)
+            self.assertTrue(result['ok'])

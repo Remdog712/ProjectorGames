@@ -11,7 +11,9 @@
 <label>OpenNI2 runtime folder<input id="runtime" type="text" placeholder="Auto-detected, or paste folder containing OpenNI2.dll"></label>
 <p class="hint">The app searches the Orbbec installation folder on Windows. Paste a different folder if needed; settings are remembered.</p>
 <label>Color camera number<input id="cameraIndex" type="number" min="0" max="20" value="0"></label>
-<p class="hint">If you see the PC webcam, try 1 or 2 and reconnect. Close Windows Camera first.</p>
+<p class="hint">If you see the PC webcam, try 1 or 2. Camera numbers can differ by backend. Close Windows Camera first.</p>
+<label>Windows color capture<select id="colorBackend"><option value="auto">Auto · DirectShow then Media Foundation</option><option value="dshow">DirectShow</option><option value="msmf">Media Foundation · Windows Camera alternative</option></select></label>
+<button id="retryColor" class="secondary">Retry color only · keep depth running</button>
 <div class="row"><button id="connect">Connect / reconnect</button><button id="disconnect" class="secondary">Disconnect</button></div>
 <p id="cameraStatus" class="hint" role="status"></p>
 </details>

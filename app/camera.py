@@ -16,21 +16,25 @@ class Camera:
         self.running = False
         self.thread = self.color_thread = None
         self.stop_event = threading.Event()
+        self.color_stop_event = threading.Event()
+        self.color_backend = ''
 
-    def start(self, runtime=None, color_index=None):
+    def start(self, runtime=None, color_index=None, color_backend='auto'):
         if any(t and t.is_alive() for t in (self.thread, self.color_thread)):
             raise RuntimeError('Disconnect the camera before reconnecting.')
         self.stop_event.clear()
+        self.color_stop_event.clear()
         self.depth = self.color = None
         self.error = self.color_error = 'Connecting…'
         self.running = True
         self.thread = threading.Thread(target=self._run, args=(runtime,), daemon=True)
-        self.color_thread = threading.Thread(target=self._run_color, args=(color_index,), daemon=True)
+        self.color_thread = threading.Thread(target=self._run_color, args=(color_index, color_backend), daemon=True)
         self.thread.start()
         self.color_thread.start()
 
     def stop(self):
         self.stop_event.set()
+        self.color_stop_event.set()
         for thread in (self.thread, self.color_thread):
             if thread:
                 thread.join(timeout=3)
@@ -78,21 +82,57 @@ class Camera:
             with self.lock:
                 self.depth = None
 
-    def _run_color(self, color_index):
+    def restart_color(self, color_index, backend='auto'):
+        """Retry RGB without disrupting OpenNI depth or an empty-surface capture."""
+        self.color_stop_event.set()
+        if self.color_thread:
+            self.color_thread.join(timeout=3)
+            if self.color_thread.is_alive():
+                raise RuntimeError('Color driver is still closing. Restart the app before retrying.')
+        self.color_stop_event.clear()
+        with self.lock:
+            self.color = None
+        self.color_error = 'Connecting color camera…'
+        self.color_thread = threading.Thread(target=self._run_color, args=(color_index, backend), daemon=True)
+        self.color_thread.start()
+
+    def _run_color(self, color_index, backend='auto'):
         capture = None
+        attempts = []
         try:
             index = int(os.getenv('PROJECTORGAMES_COLOR_INDEX', '0')) if color_index is None else color_index
-            capture = cv2.VideoCapture(index, cv2.CAP_DSHOW) if os.name == 'nt' else cv2.VideoCapture(index)
-            if not capture.isOpened():
-                raise RuntimeError(f'Cannot open color camera {index}. Choose another camera number, then reconnect.')
-            while not self.stop_event.is_set():
-                ok, frame = capture.read()
-                if not ok:
-                    raise RuntimeError('No color frames. Close other camera apps, then reconnect.')
+            choices = [('DirectShow', cv2.CAP_DSHOW), ('Media Foundation', cv2.CAP_MSMF)] if os.name == 'nt' else [('Default', cv2.CAP_ANY)]
+            if os.name == 'nt' and backend != 'auto':
+                choices = [choices[0] if backend == 'dshow' else choices[1]]
+            for name, api in choices:
+                if self.color_stop_event.is_set():
+                    return
+                self.color_backend = name
+                self.color_error = f'Trying color camera {index} via {name}…'
+                capture = cv2.VideoCapture(index, api)
+                if capture.isOpened():
+                    # Avoid a webcam's high-resolution default consuming USB bandwidth.
+                    capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                    capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                    capture.set(cv2.CAP_PROP_FPS, 30)
+                    ok, frame = capture.read()
+                    if ok and frame is not None and frame.size:
+                        break
+                    attempts.append(name + ': opened but no frames')
+                else:
+                    attempts.append(name + ': could not open')
+                capture.release()
+                capture = None
+            else:
+                raise RuntimeError(f'Camera {index}: ' + '; '.join(attempts) + '. Close other camera apps, verify the camera number, or choose another capture backend.')
+            while not self.color_stop_event.is_set():
                 with self.lock:
                     self.color = frame.copy()
                     self.color_time = time.monotonic()
                 self.color_error = ''
+                ok, frame = capture.read()
+                if not ok or frame is None or not frame.size:
+                    raise RuntimeError(f'Camera {index} via {self.color_backend} stopped producing frames. Retry color or choose another backend.')
         except Exception as exc:
             self.color_error = f'Color unavailable: {exc}'
         finally:

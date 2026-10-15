@@ -76,3 +76,9 @@ node --check app/static/app.js
 ```
 
 Tests exercise mapping, depth bands, whole-body extremes, invalid depth, configuration persistence, delayed/frozen capture, cancellation, missing cameras, stale frames, and preview encoding. Windows launchers and vendor device behavior must be checked on Windows.
+
+### Depth works but color is missing
+
+Under **1 · Connect cameras**, check the color camera number and **Windows color capture** backend. **Auto** tries DirectShow first, then Media Foundation if opening or the first frame fails. To try the Windows Camera-style API explicitly, select **Media Foundation** and click **Retry color only**. This leaves depth streaming and the empty-surface reference intact. Close Windows Camera/other viewers before retrying. Camera numbering can differ between backends, so try 0/1/2 and visually verify the selected camera. Changing the number or backend clears the saved mapping, since it may select a different camera; recalibrate after finding the correct feed.
+
+Color capture requests 640×480 at 30 fps to avoid an unnecessarily large default stream; the driver may negotiate a different supported mode. The GUI status reports the active backend and camera number. A driver blocked inside a native open/read call may require restarting the app; the retry does not launch a second stream over a hung one. Hardware-specific simultaneous depth/color behavior still needs verification on the PC; passing mocked backend tests does not establish hardware compatibility.

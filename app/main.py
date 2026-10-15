@@ -21,7 +21,7 @@ capture = CaptureManager()
 state = {'matrix': None, 'background': None, 'alignment': None}
 settings = {'points': [], 'near_mm': 15, 'far_mm': 1500, 'min_area': 100, 'body': True,
             'space': 'color', 'depth_points': [], 'color_points': [], 'color_size': None, 'depth_size': None}
-camera_settings = {'enabled': False, 'runtime': '', 'color_index': 0}
+camera_settings = {'enabled': False, 'runtime': '', 'color_index': 0, 'color_backend': 'auto'}
 
 
 class Bounds(BaseModel):
@@ -40,10 +40,14 @@ class Calibration(Bounds):
     points: list[tuple[float, float]] = Field(min_length=4, max_length=4)
 
 
-class CameraSettings(BaseModel):
+class ColorSettings(BaseModel):
+    color_index: int = Field(default=0, ge=0, le=20)
+    color_backend: Literal['auto', 'dshow', 'msmf'] = 'auto'
+
+
+class CameraSettings(ColorSettings):
     enabled: bool = True
     runtime: str = Field(default='', max_length=2048)
-    color_index: int = Field(default=0, ge=0, le=20)
 
 
 class CaptureRequest(BaseModel):
@@ -99,7 +103,7 @@ async def lifespan(app):
     if not camera_settings['runtime']:
         camera_settings['runtime'] = discover_runtime()
     if camera_settings['enabled']:
-        camera.start(camera_settings['runtime'], camera_settings['color_index'])
+        camera.start(camera_settings['runtime'], camera_settings['color_index'], camera_settings['color_backend'])
     yield
     capture.cancel()
     try:
@@ -134,7 +138,7 @@ def status():
     depth = camera.snapshot()
     color = camera.color_snapshot()
     return {'camera': camera.running and depth is not None, 'message': camera.error,
-            'color_message': camera.color_error, 'color_size': None if color is None else [color.shape[1], color.shape[0]],
+            'color_message': camera.color_error, 'color_backend': getattr(camera, 'color_backend', ''), 'color_size': None if color is None else [color.shape[1], color.shape[0]],
             'aligned': state['alignment'] is not None, 'calibrated': state['matrix'] is not None,
             'background': state['background'] is not None, 'settings': settings, 'camera_settings': camera_settings,
             'capture': capture.status(), 'size': None if depth is None else [depth.shape[1], depth.shape[0]]}
@@ -153,15 +157,31 @@ def configure_camera(config: CameraSettings):
         raise HTTPException(409, str(exc))
     capture.cancel()
     state['background'] = None
-    if runtime != camera_settings['runtime'] or config.color_index != camera_settings['color_index']:
+    if runtime != camera_settings['runtime'] or config.color_index != camera_settings['color_index'] or config.color_backend != camera_settings['color_backend']:
         state['matrix'] = state['alignment'] = None
         settings.update(points=[], depth_points=[], color_points=[])
         save_json('calibration.json', settings)
     camera_settings.update(config.model_dump(), runtime=runtime)
     save_json('camera.json', camera_settings)
     if config.enabled:
-        camera.start(runtime, config.color_index)
+        camera.start(runtime, config.color_index, config.color_backend)
     return {'ok': True, 'message': 'Connecting. Check depth and color status.' if config.enabled else 'Disconnected.'}
+
+
+@app.post('/api/camera/color')
+def retry_color(config: ColorSettings):
+    try:
+        camera.restart_color(config.color_index, config.color_backend)
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc))
+    capture.cancel()
+    if config.color_index != camera_settings['color_index'] or config.color_backend != camera_settings['color_backend']:
+        state['matrix'] = state['alignment'] = None
+        settings.update(points=[], depth_points=[], color_points=[])
+        save_json('calibration.json', settings)
+    camera_settings.update(config.model_dump())
+    save_json('camera.json', camera_settings)
+    return {'ok': True, 'message': 'Retrying color only; depth keeps running. Check the camera preview and color status.'}
 
 
 @app.post('/api/calibration')
