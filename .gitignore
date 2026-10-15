@@ -2,3 +2,7 @@
 __pycache__/
 .pytest_cache/
 .local/
+processing/ProjectorCalibrator/code/*.jar
+processing/ProjectorCalibrator/code/*.download
+processing/ProjectorCalibrator/data/*.json
+.processing-build/
