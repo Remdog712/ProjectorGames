@@ -6,6 +6,8 @@ import java.nio.file.*;
 
 /** Direct OpenNI2 C API via JNA: no Python server or separately compiled JNI bridge. */
 public final class AstraDepth {
+  // OpenNI OniCEnums.h: IR=1, COLOR=2, DEPTH=3.
+  public static final int ONI_SENSOR_DEPTH=3;
   public interface Oni extends Library {
     int oniInitialize(int version);void oniShutdown();String oniGetExtendedError();
     int oniDeviceOpen(String uri,PointerByReference device);int oniDeviceClose(Pointer device);
@@ -57,7 +59,7 @@ public final class AstraDepth {
       api=Native.load(dll.toString(),Oni.class);
       check(api,api.oniInitialize(2002),"Initialize");initialized=true;
       PointerByReference out=new PointerByReference();check(api,api.oniDeviceOpen(null,out),"Open camera");device=out.getValue();
-      check(api,api.oniDeviceCreateStream(device,2,out),"Create depth stream");stream=out.getValue();check(api,api.oniStreamStart(stream),"Start depth");
+      check(api,api.oniDeviceCreateStream(device,ONI_SENSOR_DEPTH,out),"Create depth stream");stream=out.getValue();check(api,api.oniStreamStart(stream),"Start depth");
       int sequence=0;long lastFrame=System.currentTimeMillis();status="Depth stream started; waiting for frames...";
       while(running){
         int ready=api.oniWaitForAnyStream(new Pointer[]{stream},1,new IntByReference(),200);
@@ -65,6 +67,7 @@ public final class AstraDepth {
         PointerByReference framePointer=new PointerByReference();check(api,api.oniStreamReadFrame(stream,framePointer),"Read depth");
         try {
           Frame frame=new Frame(framePointer.getValue());
+          if(frame.sensorType!=ONI_SENSOR_DEPTH)throw new IllegalStateException("OpenNI returned sensor "+frame.sensorType+"; expected depth sensor "+ONI_SENSOR_DEPTH+".");
           if(frame.videoMode.pixelFormat!=100&&frame.videoMode.pixelFormat!=101)throw new IllegalStateException("Expected depth in millimeters or 100-micrometer units.");
           if(frame.width<1||frame.height<1||frame.stride<frame.width*2||frame.dataSize<frame.stride*frame.height)throw new IllegalStateException("Invalid OpenNI depth frame layout.");
           float scale=frame.videoMode.pixelFormat==101?.1f:1f;

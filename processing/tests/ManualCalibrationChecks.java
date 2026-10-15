@@ -26,11 +26,12 @@ public final class ManualCalibrationChecks {
     check(mirrored.depthMm[0]==1400,"Mirrored image and depth coordinates agree");check(original.depthMm[0]==1000,"Mirror does not modify original frame");
     check(new AstraDepth.Frame().size()==80,"64-bit OpenNI frame ABI size");
     if(args.length>0){
-      interface Fake extends Library {void fakeSetFormat(int format);int fakeReleasedCount();int fakeClosedCount();}
+      interface Fake extends Library {void fakeSetFormat(int format);int fakeReleasedCount();int fakeClosedCount();int fakeLastSensor();}
       Fake fake=Native.load(args[0],Fake.class);
       for(int format:new int[]{100,101}){
         fake.fakeSetFormat(format);AstraDepth camera=new AstraDepth();camera.start(args[0]);long deadline=System.nanoTime()+3_000_000_000L;
         while(camera.latest==null&&System.nanoTime()<deadline)Thread.sleep(10);
+        check(fake.fakeLastSensor()==3,"OpenNI SDK depth sensor must be 3, not color sensor 2");
         check(camera.latest!=null,"Synthetic native depth stream: "+camera.status);
         check(Math.abs(camera.latest.sample(1,1)-1250)<.01,"Depth units and padded row stride for format "+format);
         camera.stop();
