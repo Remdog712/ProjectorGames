@@ -39,24 +39,52 @@ public final class ProcessingUiChecks {
       click.accept(1120,752);waitFor(()->app.tool.step==4,"Refit failed");
       click.accept(Math.round(app.tool.imageX+.4f*app.tool.imageW),Math.round(app.tool.imageY+.6f*app.tool.imageH));
       waitFor(()->app.tool.probeChecked&&app.tool.probe!=null,"Mapping probe failed");
-      click.accept(1120,752);waitFor(()->app.tool.step==5&&!app.tool.colorView&&app.tool.displayFrame!=null,"Save and Depth step failed");
+      click.accept(1120,752);waitFor(()->app.tool.step==5,"Color test step failed");
+      click.accept(70,67);waitFor(()->app.tool.testColor==1,"Projection color control failed");
+      Component projection=(Component)app.tool.projector.getSurface().getNative();
+      EventQueue.invokeAndWait(()->SwingUtilities.getWindowAncestor(projection).toFront());Thread.sleep(180);
+      Point projectionOrigin=projection.getLocationOnScreen();
+      java.awt.image.BufferedImage colorTest=robot.createScreenCapture(new Rectangle(projectionOrigin.x,projectionOrigin.y,app.tool.projector.width,app.tool.projector.height));
+      if((colorTest.getRGB(colorTest.getWidth()/4,colorTest.getHeight()/4)&0xffffff)!=0xff3333)throw new AssertionError("Red color test was not projected");
+      ImageIO.write(colorTest,"png",sketch.resolve("projector-color.png").toFile());
       if(!Files.exists(sketch.resolve("data/calibration.json")))throw new AssertionError("Calibration not saved");
-      click.accept(1120,752);if(app.tool.step!=5)throw new AssertionError("Missing depth allowed completion without explicit skip");
+      click.accept(1120,752);waitFor(()->app.tool.step==6&&!app.tool.colorView&&app.tool.displayFrame!=null,"Surface step failed");
+      click.accept(1120,752);if(app.tool.step!=6)throw new AssertionError("Missing surface allowed advancing");
       int x=Math.round(app.tool.imageX+.4f*app.tool.imageW),y=Math.round(app.tool.imageY+.6f*app.tool.imageH);
-      click.accept(x,y);waitFor(()->Float.isFinite(app.tool.measurement),"Depth click failed");
-      if(Math.abs(app.tool.measurement-2000)>2)throw new AssertionError("Unexpected measured depth: "+app.tool.measurement);
-      click.accept(1120,752);waitFor(()->app.tool.step==6,"Completion failed");
-      click.accept(990,752);waitFor(()->app.tool.step==5,"Back to measurement failed");
+      click.accept(x,y);waitFor(()->Float.isFinite(app.tool.lowMm),"Surface capture failed");
+      if(Math.abs(app.tool.lowMm-2000)>2||app.tool.surfaceFrame==null)throw new AssertionError("Invalid low bound/background");
+      click.accept(1120,752);waitFor(()->app.tool.step==7,"High point step failed");
+      click.accept(1120,752);if(app.tool.step!=7)throw new AssertionError("Missing high allowed advancing");
+      click.accept(70,67);waitFor(()->app.tool.frozen,"Delayed high capture failed");
+      click.accept(Math.round(app.tool.imageX+.1f*app.tool.imageW),Math.round(app.tool.imageY+.1f*app.tool.imageH));
+      waitFor(()->Float.isFinite(app.tool.highMm),"High point click failed");
+      click.accept(1120,752);waitFor(()->app.tool.step==8&&!app.tool.frozen,"Depth alignment step failed");
+      click.accept(1120,752);if(app.tool.step!=8)throw new AssertionError("Missing depth mapping allowed game");
+      click.accept(70,67);waitFor(()->app.tool.referenceView,"Color reference failed");
+      click.accept(Math.round(app.tool.imageX+.5f*app.tool.imageW),Math.round(app.tool.imageY+.5f*app.tool.imageH));
+      if(!app.tool.depthClicks.isEmpty())throw new AssertionError("Reference image accepted depth point");
+      click.accept(70,67);waitFor(()->!app.tool.referenceView&&app.tool.displayFrame!=null,"Return to Depth failed");
+      for(double[] uv:Mapping.grid(3))click.accept(Math.round(app.tool.imageX+(float)uv[0]*app.tool.imageW),Math.round(app.tool.imageY+(float)uv[1]*app.tool.imageH));
+      click.accept(1120,752);waitFor(()->app.tool.step==9&&app.tool.gameRunning,"Bubble game failed to start");
+      if(!Files.exists(sketch.resolve("data/interaction.json")))throw new AssertionError("Interaction settings not saved");
+      int score=app.tool.game.state().score;
+      click.accept(Math.round(app.tool.imageX+.5f*app.tool.imageW),Math.round(app.tool.imageY+.5f*app.tool.imageH));
+      if(app.tool.game.state().score!=score)throw new AssertionError("Mouse popped bubbles");
+      click.accept(70,67);waitFor(()->!app.tool.gameRunning,"Pause failed");
+      click.accept(70,67);waitFor(()->app.tool.gameRunning,"Play failed");
       app.getSurface().setSize(930,640);waitFor(()->app.width==930,"Resize failed");
-      float scale=app.tool.uiScale();
-      click.accept(Math.round((app.tool.imageX+.4f*app.tool.imageW)*scale),Math.round((app.tool.imageY+.6f*app.tool.imageH)*scale));
-      if(Math.abs(app.tool.measurement-2000)>3)throw new AssertionError("Scaled click did not map to depth pixel");
-      click.accept(Math.round(1080*scale),Math.round(802*scale));waitFor(()->app.tool.step==6,"Explicit skip failed");
+      float scale=app.tool.uiScale();click.accept(Math.round(70*scale),Math.round(67*scale));waitFor(()->!app.tool.gameRunning,"Scaled pause failed");
       EventQueue.invokeAndWait(front);Thread.sleep(100);
       Point o=canvas.getLocationOnScreen();ImageIO.write(robot.createScreenCapture(new Rectangle(o.x,o.y,app.width,app.height)),"png",sketch.resolve("processing-ui.png").toFile());
       app.tool.openProjector();
       waitFor(()->app.tool.projector.frameCount>5,"Projector window did not render");
       if(app.tool.projector.pixelDensity!=1)throw new AssertionError("Projector must use pixelDensity(1)");
+      EventQueue.invokeAndWait(()->SwingUtilities.getWindowAncestor(projection).toFront());Thread.sleep(180);
+      projectionOrigin=projection.getLocationOnScreen();
+      java.awt.image.BufferedImage gameImage=robot.createScreenCapture(new Rectangle(projectionOrigin.x,projectionOrigin.y,app.tool.projector.width,app.tool.projector.height));
+      int bubblePixels=0;for(int yy=0;yy<gameImage.getHeight();yy++)for(int xx=0;xx<gameImage.getWidth();xx++)if((gameImage.getRGB(xx,yy)&0xffffff)==0x174d79)bubblePixels++;
+      if(bubblePixels<1000)throw new AssertionError("Bubble game did not render visible targets");
+      ImageIO.write(gameImage,"png",sketch.resolve("projector-bubbles.png").toFile());
       app.tool.projector.exit();
       if(args.length>1){
         Mapping saved=app.tool.mapping;
@@ -69,7 +97,7 @@ public final class ProcessingUiChecks {
         if(app.tool.mapping!=saved)throw new AssertionError("Switching streams erased calibration");
         System.out.println("PASS: native fixture depth-only capture, color pause, depth shutdown on Color selection and preserved calibration.");
       }
-      System.out.println("PASS: guided camera/preview/projector/targets/verify/depth/completion flow; incomplete-step guards, Undo, Back, fit, probe, save, measurement, skip, resize and projector rendering.");
+      System.out.println("PASS: ten guided steps, color test, surface/low, timed high capture, independent depth alignment, bubble controls, mouse exclusion, guards, resize and projector rendering.");
     } catch(Throwable error){error.printStackTrace();result=1;} finally {if(app.tool!=null)app.tool.close();System.exit(result);}
   }
 }

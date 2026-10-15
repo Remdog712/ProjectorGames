@@ -1,11 +1,13 @@
 # ProjectorGames — Processing / Java
 
-The current version is a small **Processing 4 (Java mode)** calibration tool. It does two things:
+The current version is a small **Processing 4 (Java mode)** calibration tool. It provides:
 
 - Fits a homography from **9, 16, or 25 manually clicked correspondences** to a projected grid.
-- Reads the depth-camera distance when you click a wall/floor point in the **Depth** image.
+- Tests projected colors and reads wall/floor distance from the **Depth** image.
+- Captures an empty surface (low bound), then a delayed body image to choose a high bound.
+- Runs a depth-controlled **bubble popping game**, with adjustable noise and blob-size filters.
 
-There is **no closest-to-camera setting**, automatic pose calibration, skeleton setup, browser UI, or web server in this version. The earlier Python Studio remains in the repository for reference, but is not the application described here.
+Setup uses manual point selection and depth silhouettes. It does not require skeleton tracking, a browser UI or a web server. The earlier Python Studio remains in the repository for reference, but is not the application described here.
 
 ## Windows setup
 
@@ -31,8 +33,11 @@ The app shows one step at a time, with **Next** and **Back**:
 3. **Place projector**: use Windows **Win+P → Extend**, choose the display, and **Show grid**. Choose 3 × 3 (9), 4 × 4 (16), or 5 × 5 (25) points. Escape hides the projector window.
 4. **Click targets**: from your PC, click each numbered target center in the color preview. The next target is highlighted on the projector. **Undo point** (or Z) corrects the last click; **Freeze** holds the color image. Next requires all points and fits the homography using every correspondence.
 5. **Verify mapping**: click several places in the color preview and check the projected crosshair against the physical surface. **Back** lets you correct points. **Save & next** saves only after you have tried a preview click; you judge the physical alignment.
-6. **Measure surface**: the app selects Depth. Click the wall or floor to read its distance. Next requires a valid measurement, or use **Skip measurement** explicitly.
-7. **Setup complete**: the mapping is saved. Switch Color/Depth to check mapping or measure again.
+6. **Projection color test**: inspect red/green/blue/white bars on the projector. **Next color** cycles solid colors; **Show projector** reopens its window.
+7. **Measure surface / low**: keep the projected surface empty, then click a solid wall/floor point in Depth. This saves its distance as the low bound and holds the full depth frame as the empty-surface background.
+8. **Choose high point**: click **Capture in 5s**, stand closer to the camera, and let it freeze the depth image. Return to the PC and click one body point (chest, hand or raised foot). It must be closer than the low point by more than the noise margin. Next resumes live depth.
+9. **Align depth interaction**: click the same numbered grid positions in Depth, using surface edges/landmarks or temporary physical markers. **Color reference** shows the earlier color view with the selected grid positions; it does not switch camera streams. Click **Return to Depth** before selecting points. Depth and RGB are different coordinates: there is no assumed automatic registration. Visible projected dots may be absent from the depth image, so this step requires identifiable physical locations. All 9/16/25 correspondences are required.
+10. **Pop bubbles**: move your hands, feet or body into the selected depth layer and over projected bubbles. The mouse cannot pop bubbles. Use **Pause / Play**, **Restart bubbles**, **Show game**, **Noise** and **Min area** to adjust the test.
 
 The last saved mapping is read on startup; stepping through a new calibration replaces it only at **Save & next**. Back does not erase your selected points. Camera, mirror and grid changes reset active calibration. A mapping must match the camera, mirror orientation, resolution and physical mounting. Recalibrate after moving equipment. Keep projector resolution/aspect unchanged after fitting.
 
@@ -40,7 +45,7 @@ Homography assumes one flat wall/floor plane. Lens distortion and objects away f
 
 ## Click the wall/floor to measure distance
 
-1. Advance to **Measure surface**, or select **Depth** on the completion screen.
+1. Advance to **Measure surface**, and select **Depth** if needed.
 2. Click a solid point on the wall or floor in the depth preview.
 3. Read the value in **millimeters and meters** at the right. A crosshair marks the selected depth pixel.
 
@@ -48,14 +53,23 @@ The reading is the median of valid depth samples in a 5 × 5 patch. Zero/missing
 
 **Color homography and depth measurements are independent.** The Astra Pro's RGB and depth sensors have different image coordinates. This tool does not pretend a clicked color pixel is the corresponding depth pixel. Select Depth for measurement. It reports camera-axis depth (Z), not distance perpendicular to an arbitrary wall or radial range from the optical center. The application handles OpenNI depth modes in millimeters and 100-micrometer units.
 
-No near/far range, chest pose or body tracking is required. Those features are outside this deliberately small version.
+## Bubble interaction and noise
+
+The high/low clicks define the allowed layer thickness: `surface distance - high-point distance`. During play, each pixel is compared with the captured empty-surface depth at the same pixel. Changes smaller than **Noise** (default 20 mm) or larger than the layer thickness are ignored. This helps accommodate a sloping surface; these remain camera-axis depth differences, not perpendicular distances to a fitted plane.
+
+The detector samples every fourth depth pixel, groups neighboring foreground samples and rejects groups below **Min area** (default about 192 source pixels). A blob must persist across two successive captures. Stable silhouette pixels pop overlapping bubbles; the projected yellow rings show blob centers. Raise Noise or Min area if bubbles pop by themselves. Lower them for smaller hands/feet. This is silhouette detection, not skeleton/person identification: objects inside the layer can also interact.
+
+A planar depth homography cannot correct parallax for bodies far from the calibrated surface. Verify physical bubble alignment after calibration. Capture the empty background again if the camera, surface or projector moves. The background is session-only and is deliberately recaptured on a new setup run.
+
+The hardware-free Demo mode supplies a static synthetic plane for setup controls; it does not simulate a moving person or create mouse-driven bubble pops.
 
 ## Saved files
 
 Inside `processing/ProjectorCalibrator/data/`:
 
 - `settings.json`: runtime path, color camera/backend, mirrors and grid size.
-- `calibration.json`: normalized source points, grid, source image space/resolution, mirrors and the fitted 3 × 3 matrix.
+- `calibration.json`: normalized color source points, grid, source resolution/mirrors and fitted 3 × 3 matrix.
+- `interaction.json`: low/high measurements, noise, minimum area and depth homography/resolution/mirror for inspection. The guide recaptures the background and interaction setup each run.
 
 These are generated local files and are ignored by Git. Dependency jars are generated under the sketch's `code/` folder and are also ignored. Existing Python configuration files are preserved.
 
@@ -70,7 +84,8 @@ Validation performed in the cloud:
 - 9-, 16- and 25-point projective fits and RMS error, insufficient/collinear input rejection.
 - Depth patch sampling, missing-depth rejection and mirror consistency.
 - OpenNI C ABI using a synthetic native fixture: padded row stride, both depth-unit modes, frame release and device cleanup.
-- A real Processing/Java2D window on a virtual display, using automated mouse clicks: all seven guided steps, missing-camera/incomplete-point/unchecked-mapping guards, Undo, Back, fit, probe, save, known depth measurement, explicit skip, resizing and projector rendering.
+- A real Processing/Java2D window on a virtual display, using automated mouse clicks: all ten guided steps, color test, delayed capture, low/high gates, independent depth mapping, mouse exclusion, game controls, resizing and projector rendering.
+- Synthetic depth silhouettes: stable bubble collision, depth-range/noise rejection, missing background, minimum blob area and duplicate-frame rejection.
 
 Both windows explicitly use `pixelDensity(1)`. The control window chooses its initial size before creating the drawing surface, avoiding a resize during startup on Windows/high-density displays.
 
