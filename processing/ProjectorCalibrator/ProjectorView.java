@@ -9,7 +9,7 @@ public final class ProjectorView extends PApplet {
   public void setup(){surface.setTitle("Projector calibration grid");frameRate(30);}
   public void draw(){
     background(0);List<double[]> points=Mapping.grid(owner.grid);
-    if(owner.calibrating||owner.mapping==null){
+    if(owner.step==2||owner.calibrating||owner.mapping==null){
       for(int i=0;i<points.size();i++){
         double[] pt=points.get(i);float x=(float)pt[0]*width,y=(float)pt[1]*height;
         stroke(i==owner.selected?0xff62ffe0:0xffeeeeee);strokeWeight(i==owner.selected?4:2);noFill();ellipse(x,y,40,40);line(x-28,y,x+28,y);line(x,y-28,x,y+28);

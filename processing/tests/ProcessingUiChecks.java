@@ -20,31 +20,45 @@ public final class ProcessingUiChecks {
       Component canvas=(Component)app.getSurface().getNative();
       Runnable front=()->{Window w=SwingUtilities.getWindowAncestor(canvas);if(w!=null)w.toFront();};
       java.util.function.BiConsumer<Integer,Integer> click=(x,y)->{try{EventQueue.invokeAndWait(front);Thread.sleep(60);Point o=canvas.getLocationOnScreen();robot.mouseMove(o.x+x,o.y+y);robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);}catch(Exception e){throw new RuntimeException(e);}};
-      click.accept(180,113);waitFor(()->app.tool.calibrating,"Calibrate button failed");
+      click.accept(550,67);waitFor(()->!app.tool.demo,"Could not leave demo");
+      click.accept(1120,752);if(app.tool.step!=0)throw new AssertionError("No-camera step allowed advancing");
+      click.accept(550,67);waitFor(()->app.tool.demo,"Could not enter demo");
+      click.accept(1120,752);waitFor(()->app.tool.step==1,"Demo camera step failed");
+      click.accept(160,67);waitFor(()->!app.tool.colorView,"Depth preview toggle failed");
+      click.accept(1120,752);waitFor(()->app.tool.step==2&&app.tool.colorView,"Preview step must return to Color");
+      click.accept(1120,752);waitFor(()->app.tool.step==3&&app.tool.calibrating&&app.tool.displayFrame!=null,"Target step failed");
+      click.accept(1120,752);if(app.tool.step!=3||app.tool.mapping!=null)throw new AssertionError("Incomplete targets allowed advancing");
       for(double[] uv:Mapping.grid(3)){click.accept(Math.round(app.tool.imageX+(float)uv[0]*app.tool.imageW),Math.round(app.tool.imageY+(float)uv[1]*app.tool.imageH));}
       waitFor(()->app.tool.clicks.size()==9,"Nine camera clicks not recorded");
-      click.accept(345,113);waitFor(()->app.tool.mapping!=null,"Fit failed: "+app.tool.message);
+      click.accept(70,67);waitFor(()->app.tool.clicks.size()==8,"Undo point failed");
+      click.accept(Math.round(app.tool.imageX+.9f*app.tool.imageW),Math.round(app.tool.imageY+.9f*app.tool.imageH));
+      click.accept(1120,752);waitFor(()->app.tool.step==4&&app.tool.mapping!=null,"Fit failed: "+app.tool.message);
       double[] mapped=app.tool.mapping.apply(.37,.62);if(Math.hypot(mapped[0]-.37,mapped[1]-.62)>.003)throw new AssertionError("UI homography not identity");
-      click.accept(415,113);waitFor(()->Files.exists(sketch.resolve("data/calibration.json")),"Save failed");
-      click.accept(600,113);waitFor(()->!app.tool.colorView&&app.tool.displayFrame!=null,"Depth tab failed");
+      click.accept(1120,752);if(app.tool.step!=4)throw new AssertionError("Verification was skipped");
+      click.accept(990,752);waitFor(()->app.tool.step==3&&app.tool.calibrating,"Back to points failed");
+      click.accept(1120,752);waitFor(()->app.tool.step==4,"Refit failed");
+      click.accept(Math.round(app.tool.imageX+.4f*app.tool.imageW),Math.round(app.tool.imageY+.6f*app.tool.imageH));
+      waitFor(()->app.tool.probeChecked&&app.tool.probe!=null,"Mapping probe failed");
+      click.accept(1120,752);waitFor(()->app.tool.step==5&&!app.tool.colorView&&app.tool.displayFrame!=null,"Save and Depth step failed");
+      if(!Files.exists(sketch.resolve("data/calibration.json")))throw new AssertionError("Calibration not saved");
+      click.accept(1120,752);if(app.tool.step!=5)throw new AssertionError("Missing depth allowed completion without explicit skip");
       int x=Math.round(app.tool.imageX+.4f*app.tool.imageW),y=Math.round(app.tool.imageY+.6f*app.tool.imageH);
       click.accept(x,y);waitFor(()->Float.isFinite(app.tool.measurement),"Depth click failed");
       if(Math.abs(app.tool.measurement-2000)>2)throw new AssertionError("Unexpected measured depth: "+app.tool.measurement);
-      click.accept(70,113);waitFor(()->app.tool.grid==4&&app.tool.clicks.isEmpty(),"Grid change must reset active calibration");
-      click.accept(490,113);waitFor(()->app.tool.grid==3&&app.tool.mapping!=null&&app.tool.clicks.size()==9,"Saved mapping did not reload");
+      click.accept(1120,752);waitFor(()->app.tool.step==6,"Completion failed");
+      click.accept(990,752);waitFor(()->app.tool.step==5,"Back to measurement failed");
       app.getSurface().setSize(930,640);waitFor(()->app.width==930,"Resize failed");
-      float scale=app.tool.uiScale();click.accept(Math.round(600*scale),Math.round(113*scale));
-      waitFor(()->!app.tool.colorView&&app.tool.displayFrame!=null,"Scaled Depth mode failed");
+      float scale=app.tool.uiScale();
       click.accept(Math.round((app.tool.imageX+.4f*app.tool.imageW)*scale),Math.round((app.tool.imageY+.6f*app.tool.imageH)*scale));
-      waitFor(()->Float.isFinite(app.tool.measurement),"Scaled measurement failed");
       if(Math.abs(app.tool.measurement-2000)>3)throw new AssertionError("Scaled click did not map to depth pixel");
+      click.accept(Math.round(1080*scale),Math.round(802*scale));waitFor(()->app.tool.step==6,"Explicit skip failed");
       EventQueue.invokeAndWait(front);Thread.sleep(100);
       Point o=canvas.getLocationOnScreen();ImageIO.write(robot.createScreenCapture(new Rectangle(o.x,o.y,app.width,app.height)),"png",sketch.resolve("processing-ui.png").toFile());
       app.tool.openProjector();
       waitFor(()->app.tool.projector.frameCount>5,"Projector window did not render");
       if(app.tool.projector.pixelDensity!=1)throw new AssertionError("Projector must use pixelDensity(1)");
       app.tool.projector.exit();
-      System.out.println("PASS: projector rendering at density 1; real Processing window, nine Robot clicks, fit, save, depth toggle and measurement, grid reset, reload.");
+      System.out.println("PASS: guided camera/preview/projector/targets/verify/depth/completion flow; incomplete-step guards, Undo, Back, fit, probe, save, measurement, skip, resize and projector rendering.");
     } catch(Throwable error){error.printStackTrace();result=1;} finally {if(app.tool!=null)app.tool.close();System.exit(result);}
   }
 }

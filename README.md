@@ -20,27 +20,29 @@ The actual application is Java: OpenNI2 depth is accessed directly through JNA, 
 
 **Start ProjectorGames.cmd now verifies the Java dependencies and opens the Processing sketch**, rather than starting the old browser server. If `.pde` files are not associated with Processing, open the file using Processing's File → Open menu. Press Run in the IDE.
 
-## Basic homography: nine clicks
+## Guided setup
 
-1. In Windows use **Win+P → Extend**. Choose the correct **Display** in the tool and click **Projector**. With multiple displays, the projector window opens fullscreen on the selected display; on one monitor it opens as a separate window. Escape hides the projector window without closing the control window.
-2. Select **Color** so the projected dots are visible.
-3. Leave **3 × 3 grid** selected for 9 points. Click the grid button to choose **4 × 4 (16)** or **5 × 5 (25)** instead.
-4. Click **Calibrate**. The projector shows numbered crosshairs/dots; the next target is highlighted.
-5. **From the PC**, click each projected target's center in the camera image, in numbered order, row by row. You never need to touch the wall. **Undo** (or Z) removes the last selection. **Freeze** can hold the camera image while selecting.
-6. After selecting all points, click **Fit**. All correspondences participate in the least-squares homography fit; it is not a four-corner shortcut. The UI reports RMS reprojection error in projector pixels.
-7. Click **Save**. Then **Test mapping** and click a position in the calibrated camera image: a crosshair appears at its mapped projector position. Verify several locations on the actual surface.
+The app shows one step at a time, with **Next** and **Back**:
 
-Load restores the last saved mapping. Grid/camera/mirror changes reset the active points; they do not overwrite the last saved calibration until you click Save. A mapping must match the source camera, mirror orientation, resolution and physical mounting. Recalibrate after moving equipment or changing devices. Keep the projector display resolution/aspect unchanged after fitting; normalized coordinates do not correct an altered physical projection.
+1. **Connect camera**: choose the runtime folder and Connect. Adjust the camera number/backend here if needed. Next waits for live color. Demo is available for trying the workflow without hardware.
+2. **Check preview**: switch between Color and Depth and adjust Mirror separately. Next returns to Color for calibration.
+3. **Place projector**: use Windows **Win+P → Extend**, choose the display, and **Show grid**. Choose 3 × 3 (9), 4 × 4 (16), or 5 × 5 (25) points. Escape hides the projector window.
+4. **Click targets**: from your PC, click each numbered target center in the color preview. The next target is highlighted on the projector. **Undo point** (or Z) corrects the last click; **Freeze** holds the color image. Next requires all points and fits the homography using every correspondence.
+5. **Verify mapping**: click several places in the color preview and check the projected crosshair against the physical surface. **Back** lets you correct points. **Save & next** saves only after you have tried a preview click; you judge the physical alignment.
+6. **Measure surface**: the app selects Depth. Click the wall or floor to read its distance. Next requires a valid measurement, or use **Skip measurement** explicitly.
+7. **Setup complete**: the mapping is saved. Switch Color/Depth to check mapping or measure again.
+
+The last saved mapping is read on startup; stepping through a new calibration replaces it only at **Save & next**. Back does not erase your selected points. Camera, mirror and grid changes reset active calibration. A mapping must match the camera, mirror orientation, resolution and physical mounting. Recalibrate after moving equipment. Keep projector resolution/aspect unchanged after fitting.
 
 Homography assumes one flat wall/floor plane. Lens distortion and objects away from that plane can cause offsets. Fit error describes the clicked correspondences, not independently measured physical touch accuracy. Points must cover an area; collinear/degenerate input is rejected. A plain depth image generally cannot see projected visible-light dots, so use **Color** for wall/floor grid selection.
 
 ## Click the wall/floor to measure distance
 
-1. Click **Measure depth** (or select Depth when not calibrating/testing).
+1. Advance to **Measure surface**, or select **Depth** on the completion screen.
 2. Click a solid point on the wall or floor in the depth preview.
 3. Read the value in **millimeters and meters** at the right. A crosshair marks the selected depth pixel.
 
-The reading is the median of valid depth samples in a 5 × 5 patch. Zero/missing depth is excluded. If too few valid samples exist, the tool asks you to click a nearby solid point. Mirror applies to the displayed image and measurement coordinates together. Freeze measures the held depth frame; Resume returns to live frames.
+The reading is the median of valid depth samples in a 5 × 5 patch. Zero/missing depth is excluded. If too few valid samples exist, the tool asks you to click a nearby solid point. Mirror applies to the displayed image and measurement coordinates together. Freeze is available during color target selection; depth measurements use the live depth stream.
 
 **Color homography and depth measurements are independent.** The Astra Pro's RGB and depth sensors have different image coordinates. This tool does not pretend a clicked color pixel is the corresponding depth pixel. Select Depth for measurement. It reports camera-axis depth (Z), not distance perpendicular to an arbitrary wall or radial range from the optical center. The application handles OpenNI depth modes in millimeters and 100-micrometer units.
 
@@ -66,7 +68,7 @@ Validation performed in the cloud:
 - 9-, 16- and 25-point projective fits and RMS error, insufficient/collinear input rejection.
 - Depth patch sampling, missing-depth rejection and mirror consistency.
 - OpenNI C ABI using a synthetic native fixture: padded row stride, both depth-unit modes, frame release and device cleanup.
-- A real Processing/Java2D window on a virtual display, using automated mouse clicks: nine selections, fit, save, depth view, known depth measurement, grid reset and reload.
+- A real Processing/Java2D window on a virtual display, using automated mouse clicks: all seven guided steps, missing-camera/incomplete-point/unchecked-mapping guards, Undo, Back, fit, probe, save, known depth measurement, explicit skip, resizing and projector rendering.
 
 Both windows explicitly use `pixelDensity(1)`. The control window chooses its initial size before creating the drawing surface, avoiding a resize during startup on Windows/high-density displays.
 
