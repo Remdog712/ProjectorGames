@@ -85,6 +85,20 @@ public final class ProcessingUiChecks {
       int bubblePixels=0;for(int yy=0;yy<gameImage.getHeight();yy++)for(int xx=0;xx<gameImage.getWidth();xx++)if((gameImage.getRGB(xx,yy)&0xffffff)==0x174d79)bubblePixels++;
       if(bubblePixels<1000)throw new AssertionError("Bubble game did not render visible targets");
       ImageIO.write(gameImage,"png",sketch.resolve("projector-bubbles.png").toFile());
+      float controlScale=app.tool.uiScale();
+      Frames baseline=app.tool.surfaceFrame;Mapping fitted=app.tool.depthMapping;
+      click.accept(Math.round(1020*controlScale),Math.round(67*controlScale));waitFor(()->!app.tool.flipGame,"Flip X toggle failed");
+      if(app.tool.surfaceFrame!=baseline||app.tool.depthMapping!=fitted)throw new AssertionError("Game flip altered calibration/baseline");
+      click.accept(Math.round(1020*controlScale),Math.round(67*controlScale));waitFor(()->app.tool.flipGame,"Flip X restore failed");
+      click.accept(Math.round(860*controlScale),Math.round(67*controlScale));waitFor(()->app.tool.gameMode==1,"Halo selector failed");
+      float[] body=baseline.depthMm.clone();for(int yy=100;yy<350;yy++)for(int xx=150;xx<350;xx++)body[yy*baseline.width+xx]-=80;
+      for(int seq=10001;seq<=10002;seq++)app.tool.game.update(new Frames(baseline.width,baseline.height,new int[body.length],body,seq),baseline,fitted.flippedHorizontally(),app.tool.lowMm-app.tool.highMm,20,12,false);
+      if(app.tool.game.state().outline.isEmpty())throw new AssertionError("Halo silhouette missing");
+      EventQueue.invokeAndWait(()->SwingUtilities.getWindowAncestor(projection).toFront());Thread.sleep(180);
+      java.awt.image.BufferedImage haloImage=robot.createScreenCapture(new Rectangle(projectionOrigin.x,projectionOrigin.y,app.tool.projector.width,app.tool.projector.height));
+      int haloPixels=0;for(int yy=70;yy<haloImage.getHeight();yy++)for(int xx=0;xx<haloImage.getWidth();xx++){int rgb=haloImage.getRGB(xx,yy);if(((rgb>>16)&255)>20||((rgb>>8)&255)>20||(rgb&255)>20)haloPixels++;}
+      if(haloPixels<1500)throw new AssertionError("Halo did not render a colored outline");
+      ImageIO.write(haloImage,"png",sketch.resolve("projector-halo.png").toFile());
       app.tool.projector.exit();
       if(args.length>1){
         Mapping saved=app.tool.mapping;
@@ -97,7 +111,7 @@ public final class ProcessingUiChecks {
         if(app.tool.mapping!=saved)throw new AssertionError("Switching streams erased calibration");
         System.out.println("PASS: native fixture depth-only capture, color pause, depth shutdown on Color selection and preserved calibration.");
       }
-      System.out.println("PASS: ten guided steps, color test, surface/low, timed high capture, independent depth alignment, bubble controls, mouse exclusion, guards, resize and projector rendering.");
+      System.out.println("PASS: ten guided steps, color test, surface/low, timed high capture, independent depth alignment, bubble controls, mouse exclusion, guards, resize and projector rendering, horizontal flip, Halo selection and silhouette rendering.");
     } catch(Throwable error){error.printStackTrace();result=1;} finally {if(app.tool!=null)app.tool.close();System.exit(result);}
   }
 }

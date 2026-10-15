@@ -18,6 +18,14 @@ public final class BubbleGameChecks {
     game.reset();Mapping outside=new Mapping(new double[]{1,0,2,0,1,2,0,0,1});game.update(frame(w,h,z,1),surface,outside,500,20,12);game.update(frame(w,h,z,2),surface,outside,500,20,12);check(game.state().score==0,"Ignore interaction outside projected area");
     game.reset();bubble=game.state().bubbles.get(0);BubbleGame.Bubble raw=new BubbleGame.Bubble(1-bubble.x,bubble.y,bubble.r);z=touch(w,h,raw,1900);
     Mapping flip=new Mapping(new double[]{-1,0,1,0,1,0,0,0,1});game.update(frame(w,h,z,1),surface,flip,500,20,12);game.update(frame(w,h,z,2),surface,flip,500,20,12);check(!game.state().bubbles.contains(bubble),"Use the fitted depth homography for collisions");
+    Mapping projective=new Mapping(new double[]{.9,.1,.03,-.1,.95,.02,.05,.02,1});double[] original=projective.apply(.2,.7),flipped=projective.flippedHorizontally().apply(.2,.7);
+    check(Math.abs(flipped[0]-(1-original[0]))<1e-10&&Math.abs(flipped[1]-original[1])<1e-10,"Flip projector X after projective mapping without flipping Y");
+    game.reset();bubble=game.state().bubbles.get(0);z=touch(w,h,bubble,1900);
+    game.update(frame(w,h,z,10),surface,identity,500,20,12,false);check(game.state().outline.isEmpty(),"Halo rejects single-frame noise");
+    game.update(frame(w,h,z,11),surface,identity,500,20,12,false);check(!game.state().outline.isEmpty(),"Stable silhouette produces halo outline");check(game.state().score==0,"Halo mode never pops bubbles");
+    double[] center=game.state().contacts.get(0);boolean interior=false;for(double[] edge:game.state().outline)if(Math.hypot(edge[0]-center[0],edge[1]-center[1])<.02)interior=true;
+    check(!interior,"Halo draws boundary rather than filling the silhouette");
+    game.clearContacts();check(game.state().outline.isEmpty(),"Pause/stale frames clear halo");
     game.clearContacts();check(game.state().contacts.isEmpty(),"Clear contacts on pause/stale frame");
     System.out.println("PASS: "+checks+" bubble interaction checks.");
   }

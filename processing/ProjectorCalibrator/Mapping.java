@@ -29,6 +29,8 @@ public final class Mapping {
       return result;
     } finally { aa.release();bb.release();if(matrix!=null)matrix.release(); }
   }
+  /** Flip projector X after calibration; raw frames and baseline stay in the same space. */
+  public Mapping flippedHorizontally(){return new Mapping(new double[]{h[6]-h[0],h[7]-h[1],h[8]-h[2],h[3],h[4],h[5],h[6],h[7],h[8]});}
   public double[] apply(double x,double y) {
     double d=h[6]*x+h[7]*y+h[8];
     if (Math.abs(d)<1e-10) return new double[]{Double.NaN,Double.NaN};

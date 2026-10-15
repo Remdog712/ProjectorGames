@@ -10,7 +10,7 @@ public final class ProjectorView extends PApplet {
   public void draw(){
     background(0);
     if(owner.step==5){drawColorTest();return;}
-    if(owner.step==9){drawBubbles();return;}
+    if(owner.step==9){if(owner.gameMode==1)drawHalo();else drawBubbles();return;}
     List<double[]> points=Mapping.grid(owner.grid);
     if(owner.step==2||owner.step==8||owner.calibrating||owner.mapping==null){
       for(int i=0;i<points.size();i++){
@@ -36,6 +36,16 @@ public final class ProjectorView extends PApplet {
     }
     for(double[] uv:state.contacts){noFill();stroke(0xffffdb70);strokeWeight(3);ellipse((float)uv[0]*width,(float)uv[1]*height,36,36);}
     fill(255);textSize(28);textAlign(LEFT,TOP);text("Bubbles popped: "+state.score,25,20);
+    if(!owner.gameRunning){textAlign(CENTER,CENTER);text("PAUSED",width/2f,height/2f);}
+  }
+  void drawHalo(){
+    background(0);BubbleGame.State state=owner.game.state();noStroke();
+    float time=millis()/12000f;
+    for(int layer=0;layer<3;layer++){
+      float diameter=layer==0?48:layer==1?28:12;int alpha=layer==0?28:layer==1?85:230;
+      for(double[] uv:state.outline){int rgb=java.awt.Color.HSBtoRGB((time+(float)uv[1]*.4f)%1f,.85f,1f);fill((alpha<<24)|(rgb&0xffffff));ellipse((float)uv[0]*width,(float)uv[1]*height,diameter,diameter);}
+    }
+    fill(255);textAlign(LEFT,TOP);textSize(24);text("COLOR HALO",25,20);
     if(!owner.gameRunning){textAlign(CENTER,CENTER);text("PAUSED",width/2f,height/2f);}
   }
   public void keyPressed(){if(key==ESC){key=0;exit();}}

@@ -5,7 +5,7 @@ The current version is a small **Processing 4 (Java mode)** calibration tool. It
 - Fits a homography from **9, 16, or 25 manually clicked correspondences** to a projected grid.
 - Tests projected colors and reads wall/floor distance from the **Depth** image.
 - Captures an empty surface (low bound), then a delayed body image to choose a high bound.
-- Runs a depth-controlled **bubble popping game**, with adjustable noise and blob-size filters.
+- Runs a depth-controlled **bubble popping game** and **color silhouette halo**, with adjustable noise and blob-size filters.
 
 Setup uses manual point selection and depth silhouettes. It does not require skeleton tracking, a browser UI or a web server. The earlier Python Studio remains in the repository for reference, but is not the application described here.
 
@@ -37,7 +37,7 @@ The app shows one step at a time, with **Next** and **Back**:
 7. **Measure surface / low**: keep the projected surface empty, then click a solid wall/floor point in Depth. This saves its distance as the low bound and holds the full depth frame as the empty-surface background.
 8. **Choose high point**: click **Capture in 5s**, stand closer to the camera, and let it freeze the depth image. Return to the PC and click one body point (chest, hand or raised foot). It must be closer than the low point by more than the noise margin. Next resumes live depth.
 9. **Align depth interaction**: click the same numbered grid positions in Depth, using surface edges/landmarks or temporary physical markers. **Color reference** shows the earlier color view with the selected grid positions; it does not switch camera streams. Click **Return to Depth** before selecting points. Depth and RGB are different coordinates: there is no assumed automatic registration. Visible projected dots may be absent from the depth image, so this step requires identifiable physical locations. All 9/16/25 correspondences are required.
-10. **Pop bubbles**: move your hands, feet or body into the selected depth layer and over projected bubbles. The mouse cannot pop bubbles. Use **Pause / Play**, **Restart bubbles**, **Show game**, **Noise** and **Min area** to adjust the test.
+10. **Pop bubbles**: move your hands, feet or body into the selected depth layer and over projected bubbles. The mouse cannot pop bubbles. Use **Pause / Play**, **Restart bubbles**, **Show game**, **Noise** and **Min area** to adjust the test. **Game: Bubbles / Halo** switches games; **Flip X** corrects horizontal interaction direction and defaults to ON.
 
 The last saved mapping is read on startup; stepping through a new calibration replaces it only at **Save & next**. Back does not erase your selected points. Camera, mirror and grid changes reset active calibration. A mapping must match the camera, mirror orientation, resolution and physical mounting. Recalibrate after moving equipment. Keep projector resolution/aspect unchanged after fitting.
 
@@ -58,6 +58,10 @@ The reading is the median of valid depth samples in a 5 × 5 patch. Zero/missing
 The high/low clicks define the allowed layer thickness: `surface distance - high-point distance`. During play, each pixel is compared with the captured empty-surface depth at the same pixel. Changes smaller than **Noise** (default 20 mm) or larger than the layer thickness are ignored. This helps accommodate a sloping surface; these remain camera-axis depth differences, not perpendicular distances to a fitted plane.
 
 The detector samples every fourth depth pixel, groups neighboring foreground samples and rejects groups below **Min area** (default about 192 source pixels). A blob must persist across two successive captures. Stable silhouette pixels pop overlapping bubbles; the projected yellow rings show blob centers. Raise Noise or Min area if bubbles pop by themselves. Lower them for smaller hands/feet. This is silhouette detection, not skeleton/person identification: objects inside the layer can also interact.
+
+**Halo** uses the same stable depth silhouette and draws a soft, changing-color glow along its boundary. It does not draw a single ring around the body center or require skeleton tracking. Select a high bound that includes the body parts you want to illuminate. Pause and missing/stale depth clear the halo.
+
+**Flip X** transforms mapped interaction X to `1 - X` for both games. It leaves the saved homographies, camera preview orientation and empty-surface frame unchanged. The flip and game selection are saved in `settings.json` and `interaction.json`. Toggle Flip X if a different projector/camera arrangement already has the correct direction.
 
 A planar depth homography cannot correct parallax for bodies far from the calibrated surface. Verify physical bubble alignment after calibration. Capture the empty background again if the camera, surface or projector moves. The background is session-only and is deliberately recaptured on a new setup run.
 
