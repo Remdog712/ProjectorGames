@@ -62,9 +62,11 @@ public final class ProcessingUiChecks {
       click.accept(1120,752);if(app.tool.step!=8)throw new AssertionError("Missing depth mapping allowed game");
       click.accept(70,67);waitFor(()->app.tool.referenceView,"Color reference failed");
       click.accept(Math.round(app.tool.imageX+.5f*app.tool.imageW),Math.round(app.tool.imageY+.5f*app.tool.imageH));
-      if(!app.tool.depthClicks.isEmpty())throw new AssertionError("Reference image accepted depth point");
+      if(app.tool.depthClicks.size()!=1)throw new AssertionError("Color selection did not accept a point");
+      click.accept(230,67);waitFor(()->app.tool.depthClicks.isEmpty(),"Undo color-assisted point failed");
       click.accept(70,67);waitFor(()->!app.tool.referenceView&&app.tool.displayFrame!=null,"Return to Depth failed");
       for(double[] uv:Mapping.grid(3))click.accept(Math.round(app.tool.imageX+(float)uv[0]*app.tool.imageW),Math.round(app.tool.imageY+(float)uv[1]*app.tool.imageH));
+      click.accept(400,67);waitFor(()->app.tool.referenceView&&app.tool.depthClicks.size()==9,"Reuse color grid shortcut failed");
       click.accept(1120,752);waitFor(()->app.tool.step==9&&app.tool.gameRunning,"Bubble game failed to start");
       if(!Files.exists(sketch.resolve("data/interaction.json")))throw new AssertionError("Interaction settings not saved");
       int score=app.tool.game.state().score;
@@ -94,11 +96,20 @@ public final class ProcessingUiChecks {
       float[] body=baseline.depthMm.clone();for(int yy=100;yy<350;yy++)for(int xx=150;xx<350;xx++)body[yy*baseline.width+xx]-=80;
       for(int seq=10001;seq<=10002;seq++)app.tool.game.update(new Frames(baseline.width,baseline.height,new int[body.length],body,seq),baseline,fitted.flippedHorizontally(),app.tool.lowMm-app.tool.highMm,20,12,false);
       if(app.tool.game.state().outline.isEmpty())throw new AssertionError("Halo silhouette missing");
+      app.tool.demoCache=new Frames(baseline.width,baseline.height,new int[body.length],body,32);app.tool.gameRunning=true;
       EventQueue.invokeAndWait(()->SwingUtilities.getWindowAncestor(projection).toFront());Thread.sleep(180);
       java.awt.image.BufferedImage haloImage=robot.createScreenCapture(new Rectangle(projectionOrigin.x,projectionOrigin.y,app.tool.projector.width,app.tool.projector.height));
       int haloPixels=0;for(int yy=70;yy<haloImage.getHeight();yy++)for(int xx=0;xx<haloImage.getWidth();xx++){int rgb=haloImage.getRGB(xx,yy);if(((rgb>>16)&255)>20||((rgb>>8)&255)>20||(rgb&255)>20)haloPixels++;}
       if(haloPixels<1500)throw new AssertionError("Halo did not render a colored outline");
       ImageIO.write(haloImage,"png",sketch.resolve("projector-halo.png").toFile());
+      app.tool.gameRunning=false;Thread.sleep(1600);
+      java.awt.image.BufferedImage faded=robot.createScreenCapture(new Rectangle(projectionOrigin.x,projectionOrigin.y,app.tool.projector.width,app.tool.projector.height));
+      long originalLight=0,fadedLight=0;for(int yy=80;yy<haloImage.getHeight();yy++)for(int xx=0;xx<haloImage.getWidth();xx++){int a=haloImage.getRGB(xx,yy),b=faded.getRGB(xx,yy);originalLight+=(a&255)+((a>>8)&255)+((a>>16)&255);fadedLight+=(b&255)+((b>>8)&255)+((b>>16)&255);}
+      if(fadedLight>=originalLight*.6)throw new AssertionError("Halo trails did not fade");
+      click.accept(Math.round(860*controlScale),Math.round(67*controlScale));waitFor(()->app.tool.gameMode==2,"Light pads selector failed");
+      click.accept(Math.round(860*controlScale),Math.round(67*controlScale));waitFor(()->app.tool.gameMode==3,"Aurora selector failed");
+      EventQueue.invokeAndWait(()->SwingUtilities.getWindowAncestor(projection).toFront());Thread.sleep(150);
+      ImageIO.write(robot.createScreenCapture(new Rectangle(projectionOrigin.x,projectionOrigin.y,app.tool.projector.width,app.tool.projector.height)),"png",sketch.resolve("projector-aurora.png").toFile());
       app.tool.projector.exit();
       if(args.length>1){
         Mapping saved=app.tool.mapping;
@@ -111,7 +122,7 @@ public final class ProcessingUiChecks {
         if(app.tool.mapping!=saved)throw new AssertionError("Switching streams erased calibration");
         System.out.println("PASS: native fixture depth-only capture, color pause, depth shutdown on Color selection and preserved calibration.");
       }
-      System.out.println("PASS: ten guided steps, color test, surface/low, timed high capture, independent depth alignment, bubble controls, mouse exclusion, guards, resize and projector rendering, horizontal flip, Halo selection and silhouette rendering.");
+      System.out.println("PASS: ten guided steps, color test, surface/low, timed high capture, independent depth alignment, bubble controls, mouse exclusion, guards, resize and projector rendering, horizontal flip, Halo selection and silhouette rendering, fading trails, light pads, Aurora and color-grid reuse.");
     } catch(Throwable error){error.printStackTrace();result=1;} finally {if(app.tool!=null)app.tool.close();System.exit(result);}
   }
 }

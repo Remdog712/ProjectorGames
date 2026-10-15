@@ -3,6 +3,7 @@ import java.util.*;
 
 /** A separate native Processing window; Escape hides it without quitting the control window. */
 public final class ProjectorView extends PApplet {
+  PGraphics haloTrail;int trailReset=-1;long trailTime;
   final Calibrator owner;final int screen;
   ProjectorView(Calibrator tool,int display){owner=tool;screen=display;}
   public void settings(){if(java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices().length>1)fullScreen(screen);else size(1024,768);pixelDensity(1);}
@@ -10,7 +11,7 @@ public final class ProjectorView extends PApplet {
   public void draw(){
     background(0);
     if(owner.step==5){drawColorTest();return;}
-    if(owner.step==9){if(owner.gameMode==1)drawHalo();else drawBubbles();return;}
+    if(owner.step==9){if(owner.gameMode==1)drawHalo();else if(owner.gameMode==2)drawPads();else if(owner.gameMode==3)drawAurora();else drawBubbles();return;}
     List<double[]> points=Mapping.grid(owner.grid);
     if(owner.step==2||owner.step==8||owner.calibrating||owner.mapping==null){
       for(int i=0;i<points.size();i++){
@@ -39,15 +40,29 @@ public final class ProjectorView extends PApplet {
     if(!owner.gameRunning){textAlign(CENTER,CENTER);text("PAUSED",width/2f,height/2f);}
   }
   void drawHalo(){
-    background(0);BubbleGame.State state=owner.game.state();noStroke();
-    float time=millis()/12000f;
-    for(int layer=0;layer<3;layer++){
-      float diameter=layer==0?48:layer==1?28:12;int alpha=layer==0?28:layer==1?85:230;
-      for(double[] uv:state.outline){int rgb=java.awt.Color.HSBtoRGB((time+(float)uv[1]*.4f)%1f,.85f,1f);fill((alpha<<24)|(rgb&0xffffff));ellipse((float)uv[0]*width,(float)uv[1]*height,diameter,diameter);}
-    }
-    fill(255);textAlign(LEFT,TOP);textSize(24);text("COLOR HALO",25,20);
-    if(!owner.gameRunning){textAlign(CENTER,CENTER);text("PAUSED",width/2f,height/2f);}
+    if(haloTrail==null||haloTrail.width!=width||haloTrail.height!=height||trailReset!=owner.visualReset){haloTrail=createGraphics(width,height);haloTrail.beginDraw();haloTrail.background(0);haloTrail.endDraw();trailReset=owner.visualReset;trailTime=System.currentTimeMillis();}
+    long now=System.currentTimeMillis();float dt=Math.max(.001f,(now-trailTime)/1000f);trailTime=now;
+    haloTrail.beginDraw();haloTrail.noStroke();haloTrail.fill(0,Math.max(1,255*(1-(float)Math.pow(.01,dt/owner.trailSeconds))));haloTrail.rect(0,0,width,height);
+    if(owner.gameRunning){float time=millis()/12000f;for(int layer=0;layer<3;layer++){float diameter=layer==0?48:layer==1?28:12;int alpha=layer==0?28:layer==1?85:230;
+      for(double[] uv:owner.game.state().outline){int rgb=java.awt.Color.HSBtoRGB((time+(float)uv[1]*.4f)%1f,.85f,1f);haloTrail.fill((alpha<<24)|(rgb&0xffffff));haloTrail.ellipse((float)uv[0]*width,(float)uv[1]*height,diameter,diameter);}
+    }}haloTrail.endDraw();image(haloTrail,0,0);
+    fill(255);textAlign(LEFT,TOP);textSize(24);text("HALO TRAILS",25,20);paused();
   }
+  void drawPads(){
+    background(0xff091329);int active=owner.pads.target();int[] colors={0xffff637e,0xff6ee7ff,0xffffdb70,0xffa991ff};
+    for(int i=0;i<4;i++){double[] uv=TouchPads.CENTERS[i];float x=(float)uv[0]*width,y=(float)uv[1]*height,r=height*.12f;
+      stroke(colors[i]);strokeWeight(i==active?6:2);fill(i==active?colors[i]:0xff17233a);ellipse(x,y,r*2,r*2);fill(i==active?0xff101322:colors[i]);textSize(30);textAlign(CENTER,CENTER);text(i==active?"TOUCH":Integer.toString(i+1),x,y);
+    }fill(255);textAlign(LEFT,TOP);textSize(25);text("LIGHT PADS   Score: "+owner.pads.score(),25,20);paused();
+  }
+  void drawAurora(){
+    background(0xff020812);float t=owner.gameRunning?millis()/1000f:0,energy=owner.gameRunning?owner.audio.level:0;
+    noFill();for(int glow=0;glow<2;glow++)for(int band=0;band<18;band++){int rgb=java.awt.Color.HSBtoRGB((band/24f+t*.015f)%1,.8f,1);stroke(((glow==0?25:185)<<24)|(rgb&0xffffff));strokeWeight(glow==0?10+energy*22:2+energy*7);beginShape();
+      for(int x=0;x<=width;x+=12){float u=x/(float)width;float y=height*(.15f+band*.035f)+PApplet.sin(u*7+t*(.4f+energy)+band*.22f)*height*(.05f+energy*.13f);vertex(x,y);}endShape();}
+    noStroke();for(int i=0;i<65;i++){float u=(i*.618f+t*(.018f+energy*.06f))%1f,y=height*(.15f+(i%18)*.035f)+PApplet.sin(u*7+t*.4f+(i%18)*.22f)*height*(.05f+energy*.13f);fill(130,220,255,100+energy*150);float r=2+energy*5;ellipse(u*width,y,r,r);}
+    noFill();if(owner.gameRunning)for(double[] uv:owner.game.state().contacts){float x=(float)uv[0]*width,y=(float)uv[1]*height;for(int ring=0;ring<5;ring++){stroke(100,210,255,180-ring*30);strokeWeight(2);float r=40+ring*30+energy*90+PApplet.sin(t*2)*15;ellipse(x,y,r,r);}}
+    fill(255);textAlign(LEFT,TOP);textSize(24);text("AURORA   "+(owner.audio.enabled()?"MIC LIVE":"Enable Mic for music response"),25,20);paused();
+  }
+  void paused(){if(!owner.gameRunning){fill(255);textAlign(CENTER,CENTER);textSize(25);text("PAUSED",width/2f,height/2f);}}
   public void keyPressed(){if(key==ESC){key=0;exit();}}
   public void exit(){surface.setVisible(false);noLoop();}
 }

@@ -36,8 +36,18 @@ The app shows one step at a time, with **Next** and **Back**:
 6. **Projection color test**: inspect red/green/blue/white bars on the projector. **Next color** cycles solid colors; **Show projector** reopens its window.
 7. **Measure surface / low**: keep the projected surface empty, then click a solid wall/floor point in Depth. This saves its distance as the low bound and holds the full depth frame as the empty-surface background.
 8. **Choose high point**: click **Capture in 5s**, stand closer to the camera, and let it freeze the depth image. Return to the PC and click one body point (chest, hand or raised foot). It must be closer than the low point by more than the noise margin. Next resumes live depth.
-9. **Align depth interaction**: click the same numbered grid positions in Depth, using surface edges/landmarks or temporary physical markers. **Color reference** shows the earlier color view with the selected grid positions; it does not switch camera streams. Click **Return to Depth** before selecting points. Depth and RGB are different coordinates: there is no assumed automatic registration. Visible projected dots may be absent from the depth image, so this step requires identifiable physical locations. All 9/16/25 correspondences are required.
-10. **Pop bubbles**: move your hands, feet or body into the selected depth layer and over projected bubbles. The mouse cannot pop bubbles. Use **Pause / Play**, **Restart bubbles**, **Show game**, **Noise** and **Min area** to adjust the test. **Game: Bubbles / Halo** switches games; **Flip X** corrects horizontal interaction direction and defaults to ON.
+9. **Align depth interaction**: select **Color selection** to click grid targets in the saved color image, or **Use color grid** to reuse every point from color calibration. This uses normalized image coordinates with mirror correction; it is an **approximation**, not factory RGB/depth registration. Different fields of view, lens distortion and sensor offset can cause mismatch. Check physical alignment in the game. **Depth selection** lets you select/correct the corresponding depth locations using surface landmarks when needed. Undo works in either view.
+10. **Interaction games**: the mode button cycles **Bubbles → Halo → Light pads → Aurora**. Use Pause / Play, Restart, Show game, Noise, Min area and Flip X. **Trail** adjusts halo fade duration. **Mic** enables the default microphone for Aurora; it starts OFF each session.
+
+### Games and experiences
+
+- **Bubbles**: move hands, feet or body over projected bubbles inside the selected depth layer. Mouse clicks do not pop targets.
+- **Halo**: a changing-color silhouette outline leaves shapes behind as you move. Those trails fade over the selected duration, including after leaving the camera view. Flip and mode changes clear old trails.
+- **Light pads**: touch the illuminated colored pad to score and activate the next one. Uses stable depth silhouette/contacts and a cooldown to prevent repeated instant scoring.
+- **Aurora**: flowing colored ribbons and body-centered ripples, without scoring. With **Mic: ON**, microphone volume changes ribbon motion, width and wave amplitude. Music, voice and claps all work as input; this is amplitude response, not musical beat recognition.
+
+Microphone capture uses Java Sound and the Windows default recording input. Choose the intended microphone in Windows Sound settings and allow desktop-app microphone access if needed. No audio is recorded to disk or sent anywhere. If no microphone is available, the status explains the error and Aurora still animates. The microphone stops when the sketch closes or Mic is switched off.
+
 
 The last saved mapping is read on startup; stepping through a new calibration replaces it only at **Save & next**. Back does not erase your selected points. Camera, mirror and grid changes reset active calibration. A mapping must match the camera, mirror orientation, resolution and physical mounting. Recalibrate after moving equipment. Keep projector resolution/aspect unchanged after fitting.
 
@@ -59,9 +69,9 @@ The high/low clicks define the allowed layer thickness: `surface distance - high
 
 The detector samples every fourth depth pixel, groups neighboring foreground samples and rejects groups below **Min area** (default about 192 source pixels). A blob must persist across two successive captures. Stable silhouette pixels pop overlapping bubbles; the projected yellow rings show blob centers. Raise Noise or Min area if bubbles pop by themselves. Lower them for smaller hands/feet. This is silhouette detection, not skeleton/person identification: objects inside the layer can also interact.
 
-**Halo** uses the same stable depth silhouette and draws a soft, changing-color glow along its boundary. It does not draw a single ring around the body center or require skeleton tracking. Select a high bound that includes the body parts you want to illuminate. Pause and missing/stale depth clear the halo.
+**Halo** uses the same stable depth silhouette and draws a soft, changing-color glow along its boundary. It does not draw a single ring around the body center or require skeleton tracking. Select a high bound that includes the body parts you want to illuminate. Pause and missing/stale depth stop new halo drawing; existing trails continue to fade.
 
-**Flip X** transforms mapped interaction X to `1 - X` for both games. It leaves the saved homographies, camera preview orientation and empty-surface frame unchanged. The flip and game selection are saved in `settings.json` and `interaction.json`. Toggle Flip X if a different projector/camera arrangement already has the correct direction.
+**Flip X** transforms mapped interaction X to `1 - X` for every mode. It leaves the saved homographies, camera preview orientation and empty-surface frame unchanged. The flip and game selection are saved in `settings.json` and `interaction.json`. Toggle Flip X if a different projector/camera arrangement already has the correct direction.
 
 A planar depth homography cannot correct parallax for bodies far from the calibrated surface. Verify physical bubble alignment after calibration. Capture the empty background again if the camera, surface or projector moves. The background is session-only and is deliberately recaptured on a new setup run.
 
@@ -89,6 +99,8 @@ Validation performed in the cloud:
 - Depth patch sampling, missing-depth rejection and mirror consistency.
 - OpenNI C ABI using a synthetic native fixture: padded row stride, both depth-unit modes, frame release and device cleanup.
 - A real Processing/Java2D window on a virtual display, using automated mouse clicks: all ten guided steps, color test, delayed capture, low/high gates, independent depth mapping, mouse exclusion, game controls, resizing and projector rendering.
+- Audio RMS and light-pad scoring/cooldown checks; actual microphone hardware is not attached in the cloud.
+- Halo rendering and trail decay, mode selection and color-assisted calibration clicks.
 - Synthetic depth silhouettes: stable bubble collision, depth-range/noise rejection, missing background, minimum blob area and duplicate-frame rejection.
 
 Both windows explicitly use `pixelDensity(1)`. The control window chooses its initial size before creating the drawing surface, avoiding a resize during startup on Windows/high-density displays.

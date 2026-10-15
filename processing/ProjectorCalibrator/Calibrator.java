@@ -10,6 +10,11 @@ import org.opencv.videoio.Videoio;
 public final class Calibrator {
   final PApplet p;
   volatile int step=0;
+  static final String[] MODES={"Bubbles","Halo","Light pads","Aurora"};
+  final TouchPads pads=new TouchPads();
+  final AudioInput audio=new AudioInput();
+  volatile float trailSeconds=1.2f;
+  volatile int visualReset=0;
   volatile int gameMode=0;
   boolean flipGame=true;
   final BubbleGame game=new BubbleGame();
@@ -25,9 +30,9 @@ public final class Calibrator {
   void captureHigh(){captureAt=System.currentTimeMillis()+5000;frozen=false;invalidateImage();message="Move in front of the surface. Capturing in 5 seconds.";}
   void updateInteraction(){
     if(captureAt>0&&System.currentTimeMillis()>=captureAt){Frames f=demo?demoFrame():depth.latest;captureAt=0;if(f!=null&&(demo||f.fresh())){frozenFrame=f;frozen=true;invalidateImage();message="Captured. Return to the PC and click your chest, hand or raised foot.";}else message="No fresh depth frame. Retry capture.";}
-    if(step==9&&gameRunning){Frames f=demo?demoFrame():depth.latest;if(f==null||(!demo&&!f.fresh()))game.clearContacts();else game.update(mirrorDepth?f.mirrored():f,surfaceFrame,flipGame?depthMapping.flippedHorizontally():depthMapping,lowMm-highMm,noiseMm,minSamples,gameMode==0);}
+    if(step==9&&gameRunning){Frames f=demo?demoFrame():depth.latest;if(f==null||(!demo&&!f.fresh()))game.clearContacts();else game.update(mirrorDepth?f.mirrored():f,surfaceFrame,flipGame?depthMapping.flippedHorizontally():depthMapping,lowMm-highMm,noiseMm,minSamples,gameMode==0);if(gameMode==2)pads.update(game.state(),System.currentTimeMillis());}
   }
-  void saveRange(){try{JSONObject j=new JSONObject();j.setFloat("surface_mm",lowMm);j.setFloat("high_point_mm",highMm);j.setFloat("noise_mm",noiseMm);j.setInt("min_samples",minSamples);j.setBoolean("flip_game",flipGame);j.setString("game",gameMode==0?"bubbles":"halo");if(depthMapping!=null){JSONArray h=new JSONArray();for(double v:depthMapping.h)h.append(v);j.setJSONArray("depth_homography",h);j.setInt("depth_width",surfaceFrame.width);j.setInt("depth_height",surfaceFrame.height);j.setBoolean("mirror_depth",mirrorDepth);}p.saveJSONObject(j,data.resolve("interaction.json").toString());}catch(Exception e){message="Could not save range: "+e.getMessage();}}
+  void saveRange(){try{JSONObject j=new JSONObject();j.setFloat("surface_mm",lowMm);j.setFloat("high_point_mm",highMm);j.setFloat("noise_mm",noiseMm);j.setInt("min_samples",minSamples);j.setBoolean("flip_game",flipGame);j.setString("game",MODES[gameMode]);if(depthMapping!=null){JSONArray h=new JSONArray();for(double v:depthMapping.h)h.append(v);j.setJSONArray("depth_homography",h);j.setInt("depth_width",surfaceFrame.width);j.setInt("depth_height",surfaceFrame.height);j.setBoolean("mirror_depth",mirrorDepth);}p.saveJSONObject(j,data.resolve("interaction.json").toString());}catch(Exception e){message="Could not save range: "+e.getMessage();}}
 
   final Object cameraSwitchLock=new Object();
   volatile int cameraRequest=0;
@@ -43,8 +48,8 @@ public final class Calibrator {
     case 5:return "Check the projected color bars. Use Next color for red, green, blue and white. Check the full projected area is visible, then Next.";
     case 6:return "Click a solid spot on the wall or floor in this DEPTH preview. The distance appears below. If no depth is available, check the camera connection. Keep the surface empty: this frame becomes the background and the clicked distance is the low bound.";
     case 7:return "Click Capture in 5s, stand closer to the camera, then return and click ONE point on your body in the frozen Depth image. This is the high bound. It must be closer than the surface. Next resumes live depth.";
-    case 8:return "Match the numbered projector targets to their locations in DEPTH. Color reference shows the saved color view for guidance. Only Depth accepts clicks. Use surface edges/landmarks or temporary depth-visible markers if projected dots are invisible in Depth. Select all points, then Next.";
-    default:return "Choose Bubbles or Halo. Flip X corrects left/right interaction. Halo draws color around your silhouette within the same depth layer. Move your body into the layer to pop projected bubbles. The mouse cannot pop them. Pause / Play controls the game. Noise removes small depth changes; Min area removes small blobs. Back returns to depth alignment.";
+    case 8:return "Color selection: click the targets in the saved color view, or Use color grid to reuse all points. Color-to-depth matching is approximate; verify alignment in the game. Depth selection allows precise corrections using surface landmarks.";
+    default:return "Choose Bubbles, Halo, Light pads or Aurora. Halo leaves fading trails. Light pads: touch the glowing pad. Aurora reacts to microphone volume when Mic is ON. Flip X fixes left/right direction. Noise and Min area filter depth. Back returns to alignment.";
   }}
   boolean freshColor(){Frames f=demo?demoFrame():color.latest;return f!=null&&(demo||f.fresh());}
   void nextStep(){
@@ -56,7 +61,7 @@ public final class Calibrator {
     else if(step==5){setView(false);lowMm=Float.NaN;highMm=Float.NaN;surfaceFrame=null;depthMapping=null;measurement=Float.NaN;measureX=measureY=-1;step=6;}
     else if(step==6){setView(false);if(!Float.isFinite(lowMm)||surfaceFrame==null){message="Click a valid point on the empty surface first.";return;}step=7;highMm=Float.NaN;captureAt=0;}
     else if(step==7){if(!Float.isFinite(highMm)||lowMm-highMm<=noiseMm){message="Capture and choose a point closer than the surface by more than the noise margin.";return;}frozen=false;invalidateImage();depthClicks.clear();probe=null;selected=0;step=8;referenceView=false;openProjector();}
-    else if(step==8){if(depthClicks.size()!=grid*grid){message="Select all depth alignment points.";return;}try{depthMapping=Mapping.fit(depthClicks,Mapping.grid(grid));}catch(Exception e){message=e.getMessage();return;}saveRange();if(projector!=null&&projector.height>0)game.setAspect(projector.width/(double)projector.height);game.reset();gameRunning=true;step=9;message="Move into the layer to pop bubbles. Only live depth controls the game.";openProjector();}
+    else if(step==8){if(depthClicks.size()!=grid*grid){message="Select all depth alignment points.";return;}try{depthMapping=Mapping.fit(depthClicks,Mapping.grid(grid));}catch(Exception e){message=e.getMessage();return;}saveRange();if(projector!=null&&projector.height>0)game.setAspect(projector.width/(double)projector.height);game.reset();pads.setAspect(projector!=null&&projector.height>0?projector.width/(double)projector.height:1);pads.reset();gameRunning=true;step=9;message="Move into the layer to pop bubbles. Only live depth controls the game.";openProjector();}
   }
   void backStep(){
     if(step==0)return;
@@ -77,16 +82,17 @@ public final class Calibrator {
     if(step==3){button("Undo point",20,50,120,false);button(frozen?"Resume":"Freeze",150,50,120,frozen);}
     if(step==5){button("Next color",20,50,140,false);button("Show projector",180,50,150,false);}
     if(step==7){button("Capture in 5s",20,50,150,false);}
-    if(step==8){button(referenceView?"Return to Depth":"Color reference",20,50,150,referenceView);button("Undo depth",180,50,130,false);}
-    if(step==9){button(gameRunning?"Pause":"Play",20,50,100,gameRunning);button("Restart bubbles",130,50,140,false);button("Noise: "+(int)noiseMm+" mm",280,50,160,false);button("Min area: "+minSamples*16+" px",450,50,170,false);button("Show game",640,50,140,false);button(gameMode==0?"Game: Bubbles":"Game: Halo",790,50,160,gameMode==1);button(flipGame?"Flip X: ON":"Flip X: OFF",960,50,150,flipGame);}
+    if(step==8){button(referenceView?"Depth selection":"Color selection",20,50,150,referenceView);button("Undo depth",180,50,130,false);button("Use color grid",320,50,160,false);}
+    if(step==9){button(gameRunning?"Pause":"Play",20,50,100,gameRunning);button("Restart",130,50,140,false);button("Noise: "+(int)noiseMm+" mm",280,50,160,false);button("Min area: "+minSamples*16+" px",450,50,170,false);button("Show game",640,50,140,false);button("Mode: "+MODES[gameMode],790,50,160,gameMode==1);button(flipGame?"Flip X: ON":"Flip X: OFF",960,50,150,flipGame);}
     if(step==4){button("Show projector",20,50,150,false);}
+    if(step==9){button(audio.enabled()?"Mic: ON":"Mic: OFF",20,96,150,audio.enabled());button("Trail: "+trailSeconds+" s",180,96,160,false);p.fill(0xff9cb1c8);p.textAlign(PApplet.LEFT,PApplet.TOP);p.textSize(11);p.text(audio.status,355,105,540,40);return;}
     p.fill(0xff9cb1c8);p.textAlign(PApplet.LEFT,PApplet.TOP);p.textSize(13);p.text(guidance(),20,96,890,62);
   }
   void stepControl(int x){
     if(step==5){if(x<160)testColor=(testColor+1)%5;else if(x>=180&&x<330)openProjector();return;}
     if(step==7){if(x<170)captureHigh();return;}
-    if(step==8){if(x<170){referenceView=!referenceView;invalidateImage();}else if(x<310&&!depthClicks.isEmpty()){depthClicks.remove(depthClicks.size()-1);selected=depthClicks.size();}return;}
-    if(step==9){if(x<120){gameRunning=!gameRunning;game.clearContacts();}else if(x<270)game.reset();else if(x<440){noiseMm=noiseMm>=Math.min(50,lowMm-highMm-5)?5:noiseMm+5;game.clearContacts();saveRange();}else if(x<620){minSamples=minSamples>=48?4:minSamples+4;game.clearContacts();saveRange();}else if(x>=640&&x<780)openProjector();else if(x>=790&&x<950){gameMode=1-gameMode;game.clearContacts();saveSettings();saveRange();}else if(x>=960&&x<1110){flipGame=!flipGame;game.clearContacts();saveSettings();saveRange();}return;}
+    if(step==8){if(x<170){referenceView=!referenceView;invalidateImage();}else if(x>=320&&x<480){depthClicks.clear();for(double[] uv:clicks)depthClicks.add(new double[]{mirrorColor!=mirrorDepth?1-uv[0]:uv[0],uv[1]});selected=depthClicks.size();referenceView=true;invalidateImage();message="Reused color points with approximate normalized depth alignment. Check physical alignment in the game.";}else if(x<310&&!depthClicks.isEmpty()){depthClicks.remove(depthClicks.size()-1);selected=depthClicks.size();}return;}
+    if(step==9){if(x<120){gameRunning=!gameRunning;game.clearContacts();}else if(x<270){game.reset();pads.reset();visualReset++;}else if(x<440){noiseMm=noiseMm>=Math.min(50,lowMm-highMm-5)?5:noiseMm+5;game.clearContacts();saveRange();}else if(x<620){minSamples=minSamples>=48?4:minSamples+4;game.clearContacts();saveRange();}else if(x>=640&&x<780)openProjector();else if(x>=790&&x<950){gameMode=(gameMode+1)%MODES.length;visualReset++;game.clearContacts();pads.reset();saveSettings();saveRange();}else if(x>=960&&x<1110){flipGame=!flipGame;visualReset++;game.clearContacts();saveSettings();saveRange();}return;}
     if(step==0){if(x<140)chooseRuntime();else if(x<240)connect();else if(x<345){String value=JOptionPane.showInputDialog("Color camera number (usually 0 or 1):",colorIndex);if(value!=null)try{int n=Integer.parseInt(value);if(n<0||n>20)throw new NumberFormatException();colorIndex=n;reset();saveSettings();}catch(NumberFormatException e){message="Choose a number from 0 to 20.";}}else if(x<495){backend=backend==0?Videoio.CAP_DSHOW:backend==Videoio.CAP_DSHOW?Videoio.CAP_MSMF:0;reset();saveSettings();}else if(x<595){demo=!demo;reset();setView(true);invalidateImage();if(cameraEnabled)switchCamera();}return;}
     if(step==1||step==6){if(x>=330&&x<470&&!colorView){retryDepth();return;}if(x<110)setView(true);else if(x<210)setView(false);else if(step==1&&x<310){if(colorView)mirrorColor=!mirrorColor;else mirrorDepth=!mirrorDepth;reset();invalidateImage();saveSettings();}return;}
     if(step==2){if(x<140){display=display%GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices().length+1;}else if(x<270)openProjector();else if(x<400){grid=grid==5?3:grid+1;reset();saveSettings();}return;}
@@ -151,7 +157,7 @@ public final class Calibrator {
     p.fill(PANEL);p.rect(940,165,280,675,8);p.fill(ACCENT);p.textAlign(PApplet.LEFT,PApplet.TOP);p.textSize(16);p.text(steps[step],958,185);
     p.fill(INK);p.textSize(13);p.text("Points: "+(step==8?depthClicks.size():clicks.size())+" / "+(grid*grid),958,220);
     p.text(guidance(),958,252,242,155);
-    p.fill(ACCENT);p.textSize(23);p.text(step==9?(gameMode==0?game.state().score+" popped":"Color halo"):Float.isNaN(measurement)?"-- mm":String.format(java.util.Locale.ROOT,"%.0f mm",measurement),958,410);p.textSize(14);p.text(step==9?(gameMode==0?"Depth-controlled bubbles":"Depth silhouette outline"):Float.isNaN(measurement)?"":String.format(java.util.Locale.ROOT,"%.3f m from camera",measurement/1000),958,445);
+    p.fill(ACCENT);p.textSize(23);p.text(step==9?(gameMode==0?game.state().score+" popped":gameMode==2?pads.score()+" pads":MODES[gameMode]):Float.isNaN(measurement)?"-- mm":String.format(java.util.Locale.ROOT,"%.0f mm",measurement),958,410);p.textSize(14);p.text(step==9?(gameMode==2?"Touch the glowing pad":gameMode==3?"Microphone-reactive ribbons":"Depth interaction"):Float.isNaN(measurement)?"":String.format(java.util.Locale.ROOT,"%.3f m from camera",measurement/1000),958,445);
     p.fill(0xffa7bad1);p.textSize(12);p.text("Depth and color are different views. Measure distance in Depth.\n\nKeep the camera and projector fixed after calibration.",958,485,242,85);
     p.fill(INK);p.text((step>=6?"Surface low: "+(int)lowMm+" mm\nHigh point: "+(Float.isFinite(highMm)?(int)highMm+" mm":"not selected")+"\n":"")+(captureAt>0?"Capture in "+Math.max(1,(captureAt-System.currentTimeMillis()+999)/1000)+" seconds":message),958,580,242,100);p.fill(0xffa7bad1);p.text((demo?"SYNTHETIC DEMO\n":depth.status+"\n"+color.status),958,680,245,50);
     if(step>0)button("Back",958,735,90,false);
@@ -171,10 +177,11 @@ public final class Calibrator {
 
     if(y>=50&&y<84&&x>=20){stepControl(x);return;}
     if(step<3)return;
-    if(step==9||step==5||step==7&&!frozen||step==8&&referenceView)return;
+    if(step==9&&y>=96&&y<130){if(x>=20&&x<170){if(audio.enabled())audio.stop();else audio.start();}else if(x>=180&&x<340){trailSeconds=trailSeconds>=4.8f?.6f:trailSeconds*2;saveSettings();}return;}
+    if(step==9||step==5||step==7&&!frozen)return;
     if(displayFrame==null||!inside(x,y,imageX,imageY,imageW,imageH))return;
     double u=(x-imageX)/imageW,v=(y-imageY)/imageH;
-    if(step==8){if(depthClicks.size()<grid*grid){depthClicks.add(new double[]{u,v});selected=depthClicks.size();}return;}
+    if(step==8){if(depthClicks.size()<grid*grid){double du=u;if(referenceView&&mirrorColor!=mirrorDepth)du=1-u;depthClicks.add(new double[]{du,v});selected=depthClicks.size();if(referenceView)message="Color-assisted point selected. Approximate alignment: check the game and use Depth selection to correct if offset.";}return;}
     if(calibrating){
       if(displayFrame.width!=mapWidth||displayFrame.height!=mapHeight){message="Frame dimensions changed. Restart calibration.";return;}
       if(clicks.size()<grid*grid){clicks.add(new double[]{u,v});selected=clicks.size();mapping=null;message=clicks.size()==grid*grid?"All points selected. Click Fit.":"Next target: "+(clicks.size()+1);}
@@ -214,12 +221,12 @@ public final class Calibrator {
     },"Switch camera stream").start();
   }
   void openProjector(){if(projector!=null&&projector.screen==display){projector.getSurface().setVisible(true);projector.loop();return;}if(projector!=null){projector.noLoop();projector.getSurface().setVisible(false);}projector=new ProjectorView(this,display);PApplet.runSketch(new String[]{"Projector grid"},projector);}
-  JSONObject settings(){JSONObject j=new JSONObject();j.setString("runtime",runtime);j.setInt("color_index",colorIndex);j.setInt("backend",backend);j.setBoolean("mirror_color",mirrorColor);j.setBoolean("mirror_depth",mirrorDepth);j.setInt("grid",grid);j.setBoolean("flip_game",flipGame);j.setInt("game_mode",gameMode);return j;}
+  JSONObject settings(){JSONObject j=new JSONObject();j.setString("runtime",runtime);j.setInt("color_index",colorIndex);j.setInt("backend",backend);j.setBoolean("mirror_color",mirrorColor);j.setBoolean("mirror_depth",mirrorDepth);j.setInt("grid",grid);j.setBoolean("flip_game",flipGame);j.setInt("game_mode",gameMode);j.setFloat("trail_seconds",trailSeconds);return j;}
   void saveSettings(){try{Files.createDirectories(data);p.saveJSONObject(settings(),data.resolve("settings.json").toString());}catch(Exception e){message="Cannot save settings: "+e.getMessage();}}
-  void loadSettings(){try{Path file=data.resolve("settings.json");if(!Files.exists(file)){Path old=Paths.get(p.sketchPath()).resolve("../../.local/camera.json").normalize();if(Files.exists(old)){JSONObject j=p.loadJSONObject(old.toString());runtime=j.getString("runtime","");colorIndex=j.getInt("color_index",0);String b=j.getString("color_backend","auto");backend=b.equals("dshow")?Videoio.CAP_DSHOW:b.equals("msmf")?Videoio.CAP_MSMF:0;mirrorColor=j.getBoolean("mirror_color",false);mirrorDepth=j.getBoolean("mirror_depth",false);}return;}JSONObject j=p.loadJSONObject(file.toString());runtime=j.getString("runtime","");colorIndex=j.getInt("color_index",0);backend=j.getInt("backend",0);mirrorColor=j.getBoolean("mirror_color",false);mirrorDepth=j.getBoolean("mirror_depth",false);flipGame=j.getBoolean("flip_game",true);gameMode=j.getInt("game_mode",0)==1?1:0;grid=j.getInt("grid",3);if(grid<3||grid>5)grid=3;}catch(Exception e){message="Settings could not be read. Choose runtime and camera again.";}}
+  void loadSettings(){try{Path file=data.resolve("settings.json");if(!Files.exists(file)){Path old=Paths.get(p.sketchPath()).resolve("../../.local/camera.json").normalize();if(Files.exists(old)){JSONObject j=p.loadJSONObject(old.toString());runtime=j.getString("runtime","");colorIndex=j.getInt("color_index",0);String b=j.getString("color_backend","auto");backend=b.equals("dshow")?Videoio.CAP_DSHOW:b.equals("msmf")?Videoio.CAP_MSMF:0;mirrorColor=j.getBoolean("mirror_color",false);mirrorDepth=j.getBoolean("mirror_depth",false);}return;}JSONObject j=p.loadJSONObject(file.toString());runtime=j.getString("runtime","");colorIndex=j.getInt("color_index",0);backend=j.getInt("backend",0);mirrorColor=j.getBoolean("mirror_color",false);mirrorDepth=j.getBoolean("mirror_depth",false);flipGame=j.getBoolean("flip_game",true);gameMode=Math.max(0,Math.min(MODES.length-1,j.getInt("game_mode",0)));trailSeconds=Math.max(.3f,Math.min(5,j.getFloat("trail_seconds",1.2f)));grid=j.getInt("grid",3);if(grid<3||grid>5)grid=3;}catch(Exception e){message="Settings could not be read. Choose runtime and camera again.";}}
   boolean saveCalibration(){if(mapping==null){message="Fit a valid mapping before saving.";return false;}try{JSONObject j=settings();j.setString("space",mapSpace);j.setInt("width",mapWidth);j.setInt("height",mapHeight);JSONArray values=new JSONArray();for(double v:mapping.h)values.append(v);j.setJSONArray("homography",values);JSONArray points=new JSONArray();for(double[] pt:clicks){JSONArray a=new JSONArray();a.append(pt[0]);a.append(pt[1]);points.append(a);}j.setJSONArray("points",points);Files.createDirectories(data);p.saveJSONObject(j,data.resolve("calibration.json").toString());message="Saved to data/calibration.json.";return true;}catch(Exception e){message="Save failed: "+e.getMessage();return false;}}
   void loadCalibration(){try{Path file=data.resolve("calibration.json");if(!Files.exists(file))return;JSONObject j=p.loadJSONObject(file.toString());if(j.getInt("color_index",colorIndex)!=colorIndex||j.getInt("backend",backend)!=backend||!j.getString("runtime",runtime).equals(runtime))throw new IllegalArgumentException("Saved camera settings differ. Select the matching camera/runtime or recalibrate.");JSONArray a=j.getJSONArray("homography");double[] values=new double[9];for(int i=0;i<9;i++)values[i]=a.getDouble(i);Mapping restored=new Mapping(values);JSONArray pts=j.getJSONArray("points");int g=j.getInt("grid");if(g<3||g>5||pts.size()!=g*g)throw new IllegalArgumentException("Invalid point count.");clicks.clear();for(int i=0;i<pts.size();i++){JSONArray pt=pts.getJSONArray(i);clicks.add(new double[]{pt.getDouble(0),pt.getDouble(1)});}grid=g;mapSpace=j.getString("space");mapWidth=j.getInt("width");mapHeight=j.getInt("height");mirrorColor=j.getBoolean("mirror_color",false);mirrorDepth=j.getBoolean("mirror_depth",false);mapping=restored;selected=clicks.size();calibrating=false;invalidateImage();message="Saved "+clicks.size()+"-point "+mapSpace.toLowerCase()+" mapping loaded.";}catch(Exception e){message="Cannot load calibration: "+e.getMessage();}}
   public void keyPressed(char key,int code){if(step==3&&(key=='z'||key=='Z'))undoPoint();}
 
-  public void close(){cameraRequest++;cameraEnabled=false;synchronized(cameraSwitchLock){try{depth.stop();}catch(Exception ignored){}try{color.stop();}catch(Exception ignored){}}}
+  public void close(){audio.stop();cameraRequest++;cameraEnabled=false;synchronized(cameraSwitchLock){try{depth.stop();}catch(Exception ignored){}try{color.stop();}catch(Exception ignored){}}}
 }
